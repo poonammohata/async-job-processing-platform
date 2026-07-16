@@ -16,7 +16,7 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | Prisma schema and initial migration | Implemented |
 | Prisma module | Implemented |
 | PostgreSQL and Redis development infrastructure | Implemented |
-| Queue producer | Not implemented |
+| BullMQ queue producer infrastructure | Implemented |
 | Worker | Not implemented |
 | Mandatory APIs | Not implemented |
 | Bonus features | Not implemented |
@@ -114,7 +114,9 @@ async-job-processing-platform/
 │       │   ├── schema.prisma
 │       │   └── migrations/
 │       └── src/
-│           └── prisma/      # PrismaModule and PrismaService
+│           ├── prisma/      # PrismaModule and PrismaService
+│           ├── jobs/        # Job repositories
+│           └── queue/       # BullMQ queue producer
 ├── docs/
 │   ├── DESIGN.md            # System design and ADRs
 │   └── API.md               # Planned API contracts

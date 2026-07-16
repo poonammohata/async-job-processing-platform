@@ -1,0 +1,2 @@
+export const JOB_QUEUE_TOKEN = Symbol('JOB_QUEUE');
+export const JOB_QUEUE_CONNECTION_TOKEN = Symbol('JOB_QUEUE_CONNECTION');
