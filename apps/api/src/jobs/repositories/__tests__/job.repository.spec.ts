@@ -18,6 +18,7 @@ describe('JobRepository', () => {
       findUnique: jest.Mock;
       findMany: jest.Mock;
       count: jest.Mock;
+      aggregate: jest.Mock;
       update: jest.Mock;
     };
   };
@@ -62,6 +63,7 @@ describe('JobRepository', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
+        aggregate: jest.fn(),
         update: jest.fn(),
       },
     };
@@ -180,6 +182,55 @@ describe('JobRepository', () => {
       expect(prisma.job.count).toHaveBeenCalledWith({
         where: { status: JobStatus.COMPLETED },
       });
+    });
+  });
+
+  describe('countCompletedJobs', () => {
+    it('counts completed jobs', async () => {
+      prisma.job.count.mockResolvedValue(110);
+
+      await expect(repository.countCompletedJobs()).resolves.toBe(110);
+      expect(prisma.job.count).toHaveBeenCalledWith({
+        where: { status: JobStatus.COMPLETED },
+      });
+    });
+  });
+
+  describe('countFailedJobs', () => {
+    it('counts failed jobs', async () => {
+      prisma.job.count.mockResolvedValue(10);
+
+      await expect(repository.countFailedJobs()).resolves.toBe(10);
+      expect(prisma.job.count).toHaveBeenCalledWith({
+        where: { status: JobStatus.FAILED },
+      });
+    });
+  });
+
+  describe('averageProcessingTimeMs', () => {
+    it('returns the average processing time for completed jobs', async () => {
+      prisma.job.aggregate.mockResolvedValue({
+        _avg: { processingTimeMs: 842 },
+      });
+
+      await expect(repository.averageProcessingTimeMs()).resolves.toBe(842);
+      expect(prisma.job.aggregate).toHaveBeenCalledWith({
+        where: {
+          status: JobStatus.COMPLETED,
+          processingTimeMs: { not: null },
+        },
+        _avg: {
+          processingTimeMs: true,
+        },
+      });
+    });
+
+    it('returns null when no completed jobs have processing time', async () => {
+      prisma.job.aggregate.mockResolvedValue({
+        _avg: { processingTimeMs: null },
+      });
+
+      await expect(repository.averageProcessingTimeMs()).resolves.toBeNull();
     });
   });
 

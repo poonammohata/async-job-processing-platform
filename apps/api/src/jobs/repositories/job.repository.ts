@@ -45,6 +45,32 @@ export class JobRepository {
     return this.prisma.job.count({ where });
   }
 
+  countCompletedJobs(): Promise<number> {
+    return this.prisma.job.count({
+      where: { status: JobStatus.COMPLETED },
+    });
+  }
+
+  countFailedJobs(): Promise<number> {
+    return this.prisma.job.count({
+      where: { status: JobStatus.FAILED },
+    });
+  }
+
+  async averageProcessingTimeMs(): Promise<number | null> {
+    const result = await this.prisma.job.aggregate({
+      where: {
+        status: JobStatus.COMPLETED,
+        processingTimeMs: { not: null },
+      },
+      _avg: {
+        processingTimeMs: true,
+      },
+    });
+
+    return result._avg.processingTimeMs;
+  }
+
   async exists(id: string): Promise<boolean> {
     const total = await this.count({ id });
     return total > 0;

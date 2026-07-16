@@ -10,12 +10,15 @@ import {
   JOB_WORKER_CONNECTION_TOKEN,
 } from './queue.constants';
 import { QueueJobData } from './queue.types';
+import { QueueController } from './queue.controller';
+import { QueueManagementService } from './queue-management.service';
 import { QueueService } from './queue.service';
 import { RedisConnectionService } from './redis-connection.service';
 import { WorkerRedisConnectionService } from './worker-redis-connection.service';
 
 @Module({
   imports: [AppConfigModule],
+  controllers: [QueueController],
   providers: [
     RedisConnectionService,
     {
@@ -48,6 +51,7 @@ import { WorkerRedisConnectionService } from './worker-redis-connection.service'
       inject: [ConfigService, JOB_QUEUE_CONNECTION_TOKEN],
     },
     QueueService,
+    QueueManagementService,
     WorkerRedisConnectionService,
     {
       provide: JOB_WORKER_CONNECTION_TOKEN,
@@ -58,6 +62,7 @@ import { WorkerRedisConnectionService } from './worker-redis-connection.service'
   ],
   exports: [
     QueueService,
+    QueueManagementService,
     RedisConnectionService,
     WorkerRedisConnectionService,
     JOB_WORKER_CONNECTION_TOKEN,

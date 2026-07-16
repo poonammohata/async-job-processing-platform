@@ -23,13 +23,18 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | GET /api/jobs/:id | Implemented |
 | Worker / automatic job processing | Implemented |
 | Retry lifecycle synchronization | Implemented |
+| POST /api/queue/pause | Implemented |
+| POST /api/queue/resume | Implemented |
+| GET /api/health | Implemented |
+| GET /api/metrics | Implemented |
+| Worker heartbeat | Implemented |
 | Cancellation and remaining job APIs | Not implemented |
 | Bonus features | Not implemented |
 | Bootstrap unit tests | Implemented |
 | Platform integration tests | Not implemented |
 | Docker Compose full application startup | Not implemented |
 
-The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission, querying, and worker processing are available; cancellation and remaining operational APIs are **not yet built**.
+The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission, querying, worker processing, queue controls, health, and metrics are available; cancellation and remaining operational APIs are **not yet built**.
 
 ---
 
@@ -46,6 +51,9 @@ The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis
 - Get single job; list jobs with pagination, status filter, and sort
 - Request validation (type, priority, payload)
 - Structured lifecycle logging
+- Queue pause and resume (`POST /api/queue/pause`, `POST /api/queue/resume`) — pause affects **waiting jobs only**; active jobs continue to completion
+- Health checks (`GET /api/health`) — PostgreSQL, Redis, worker heartbeat, and live queue counts
+- Metrics (`GET /api/metrics`) — historical stats from PostgreSQL, live queue depth from BullMQ (`queueLength` = waiting jobs only)
 - Docker Compose startup (planned)
 - Architecture and API documentation
 
@@ -54,11 +62,8 @@ The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis
 - Priority queue (`high`, `normal`, `low`)
 - Delayed and scheduled jobs
 - Dead-letter visibility (PostgreSQL-backed view; dedicated BullMQ DLQ planned as future enhancement)
-- Worker heartbeat
 - Multiple workers
 - Job cancellation (pre-processing)
-- Queue pause and resume
-- Health and metrics endpoints
 - Swagger / OpenAPI
 - Unit and integration tests
 - Graceful shutdown
@@ -267,23 +272,20 @@ Swagger is **not yet available**.
 
 ## Testing
 
-Planned test categories (not yet implemented):
-
 | Category | Scope |
 | -------- | ----- |
-| Unit tests | Validation, repositories, state transitions, metrics |
+| Unit tests | Validation, repositories, services, queue, worker, health, metrics |
+| E2E tests | Jobs API, queue controls, health, metrics |
 | Integration tests | API + DB + queue + worker flows |
 | End-to-end lifecycle | Submit → process → complete / fail / retry |
 | Docker smoke test | `docker compose up` and basic job submission |
 
-Planned commands (subject to implementation):
+Commands:
 
 ```bash
 npm run test:api          # unit tests
 npm run test:e2e --workspace=apps/api   # integration/e2e
 ```
-
-Platform-specific unit and integration tests are not yet implemented.
 
 ---
 
