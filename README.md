@@ -14,14 +14,16 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | Architecture design | Documented |
 | API contract documentation | Documented |
 | Database (Prisma schema) | Not implemented |
+| PostgreSQL and Redis development infrastructure | Implemented |
 | Queue producer | Not implemented |
 | Worker | Not implemented |
 | Mandatory APIs | Not implemented |
 | Bonus features | Not implemented |
-| Tests | Not implemented |
-| Docker Compose | Not implemented |
+| Bootstrap unit tests | Implemented |
+| Platform integration tests | Not implemented |
+| Docker Compose full application startup | Not implemented |
 
-The repository currently contains a minimal NestJS scaffold under `apps/api`. Planned components listed below are **not yet built**.
+The repository contains a NestJS API scaffold under `apps/api` and local PostgreSQL/Redis via Docker Compose. Application containers, job APIs, and worker processing are **not yet built**.
 
 ---
 
@@ -74,7 +76,7 @@ The repository currently contains a minimal NestJS scaffold under `apps/api`. Pl
 | **Prisma** | ORM, schema, and migrations |
 | **Redis** | BullMQ backend and worker heartbeat |
 | **BullMQ** | Queue, retries, priority, delay, pause |
-| **Docker Compose** | Local multi-service orchestration (planned) |
+| **Docker Compose** | Local PostgreSQL and Redis (application containers planned) |
 | **Swagger** | Interactive API docs (planned) |
 | **Jest** | Unit and integration testing (planned) |
 
@@ -113,12 +115,12 @@ async-job-processing-platform/
 ├── docs/
 │   ├── DESIGN.md            # System design and ADRs
 │   └── API.md               # Planned API contracts
-├── docker-compose.yml       # Planned — local orchestration
+├── docker-compose.yml       # Local PostgreSQL and Redis
 ├── package.json             # Root workspace config
 └── README.md
 ```
 
-**Not yet present:** `apps/web/`, `apps/api/prisma/`, `docker-compose.yml`, `.env.example`
+**Not yet present:** `apps/web/`, `apps/api/prisma/`
 
 ---
 
@@ -136,7 +138,7 @@ Planned development prerequisites:
 
 ## Environment Configuration
 
-1. Copy `.env.example` to `.env` (`.env.example` planned).
+1. Copy `apps/api/.env.example` to `apps/api/.env`.
 2. **Never commit `.env`** — it is listed in `.gitignore`.
 
 | Context | Hostnames |
@@ -165,34 +167,42 @@ Operational values below are **environment-configurable defaults** (exact names 
 
 ## Running Locally
 
-> **Planned workflow — not yet verified.** Commands below describe the target developer experience once implementation is complete.
-
 1. Install dependencies: `npm install`
-2. Start PostgreSQL and Redis (local install or Docker)
-3. Copy `.env.example` to `.env` and configure
-4. Apply migrations: `npm exec --workspace=apps/api -- prisma migrate deploy`
-5. Start API: `npm run dev:api`
-6. Start worker: separate command TBD (e.g., `npm run start:worker --workspace=apps/api`)
+2. Start PostgreSQL and Redis:
+
+```bash
+npm run infra:up
+```
+
+3. Copy `apps/api/.env.example` to `apps/api/.env`
+4. Start API: `npm run dev:api`
+
+Additional steps (Prisma migrations, worker) are planned and not yet implemented.
+
+Useful infrastructure commands:
+
+```bash
+npm run infra:down    # stop containers
+npm run infra:logs    # follow postgres and redis logs
+npm run infra:reset   # stop containers and remove volumes
+```
 
 ---
 
 ## Running with Docker
 
-Target command once Docker Compose is implemented:
+Docker Compose currently starts **PostgreSQL and Redis only**:
 
 ```bash
-docker compose up --build
+npm run infra:up
 ```
 
-Expected services:
+| Service | Host port | Purpose |
+| ------- | --------- | ------- |
+| **postgres** | 5432 | Durable storage (`jobs_db`) |
+| **redis** | 6379 | Queue backend (future BullMQ) |
 
-- **api** — HTTP on port 3000
-- **worker** — background processor (no public port)
-- **postgres** — durable storage
-- **redis** — queue backend
-- **migrate** (optional) — one-time Prisma migrations
-
-This is the **target** until implementation is complete.
+Full platform startup (`api`, `worker`, migrations) via `docker compose up --build` remains **planned** and is not implemented yet.
 
 ---
 
@@ -279,7 +289,7 @@ See [docs/DESIGN.md — Future Improvements](./docs/DESIGN.md#future-improvement
 - [ ] Docker Compose
 - [ ] Database schema
 - [ ] Migration files
-- [ ] `.env.example`
+- [x] `.env.example` (`apps/api/.env.example`)
 - [ ] Mandatory APIs
 - [ ] Worker
 - [ ] Retry handling

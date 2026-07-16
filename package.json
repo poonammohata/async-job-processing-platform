@@ -8,6 +8,10 @@
   "scripts": {
     "dev:api": "npm run start:dev --workspace=apps/api",
     "build:api": "npm run build --workspace=apps/api",
-    "test:api": "npm run test --workspace=apps/api"
+    "test:api": "npm run test --workspace=apps/api",
+    "infra:up": "docker compose up -d postgres redis",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f postgres redis",
+    "infra:reset": "docker compose down -v"
   }
 }
