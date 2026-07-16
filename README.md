@@ -13,7 +13,8 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | Project workspace and NestJS scaffold | Initialized |
 | Architecture design | Documented |
 | API contract documentation | Documented |
-| Database (Prisma schema) | Not implemented |
+| Prisma schema and initial migration | Implemented |
+| Prisma module | Implemented |
 | PostgreSQL and Redis development infrastructure | Implemented |
 | Queue producer | Not implemented |
 | Worker | Not implemented |
@@ -108,10 +109,12 @@ Full design, lifecycle diagrams, and ADRs: **[docs/DESIGN.md](./docs/DESIGN.md)*
 ```text
 async-job-processing-platform/
 ├── apps/
-│   └── api/                 # NestJS API and worker source (exists — scaffold only)
-│       └── prisma/          # Planned — schema and migrations
-│           ├── schema.prisma
-│           └── migrations/
+│   └── api/                 # NestJS API and worker source
+│       ├── prisma/          # Schema and migrations
+│       │   ├── schema.prisma
+│       │   └── migrations/
+│       └── src/
+│           └── prisma/      # PrismaModule and PrismaService
 ├── docs/
 │   ├── DESIGN.md            # System design and ADRs
 │   └── API.md               # Planned API contracts
@@ -120,7 +123,7 @@ async-job-processing-platform/
 └── README.md
 ```
 
-**Not yet present:** `apps/web/`, `apps/api/prisma/`
+**Not yet present:** `apps/web/`
 
 ---
 
@@ -208,15 +211,34 @@ Full platform startup (`api`, `worker`, migrations) via `docker compose up --bui
 
 ## Database Migrations
 
-Planned Prisma workflow (schema lives in `apps/api/prisma/`):
+Prisma schema lives in `apps/api/prisma/`. Start PostgreSQL first:
 
-1. Define schema in `apps/api/prisma/schema.prisma`
-2. Generate client: `npm exec --workspace=apps/api -- prisma generate`
-3. Create development migration: `npm exec --workspace=apps/api -- prisma migrate dev`
-4. Deploy in CI/Docker: `npm exec --workspace=apps/api -- prisma migrate deploy`
-5. Commit migration SQL files under `apps/api/prisma/migrations/` to version control
+```bash
+npm run infra:up
+```
 
-`prisma db push` is **not** the final deployment process for production-like environments.
+Common commands from the repository root:
+
+```bash
+npm exec --workspace=apps/api -- prisma validate
+npm exec --workspace=apps/api -- prisma format
+npm exec --workspace=apps/api -- prisma generate
+npm exec --workspace=apps/api -- prisma migrate dev -- --name <migration_name>
+npm exec --workspace=apps/api -- prisma migrate deploy
+npm exec --workspace=apps/api -- prisma migrate status
+```
+
+Or from `apps/api`:
+
+```bash
+npm run prisma:generate
+npm run prisma:migrate:dev
+npm run prisma:migrate:deploy
+```
+
+Set `DATABASE_URL` in `apps/api/.env` (see `apps/api/.env.example`). Commit migration SQL files under `apps/api/prisma/migrations/`.
+
+`prisma db push` is **not** used for deployment.
 
 ---
 
@@ -287,8 +309,8 @@ See [docs/DESIGN.md — Future Improvements](./docs/DESIGN.md#future-improvement
 - [x] API contract documentation (`docs/API.md`)
 - [ ] Swagger or Postman collection
 - [ ] Docker Compose
-- [ ] Database schema
-- [ ] Migration files
+- [x] Database schema
+- [x] Migration files
 - [x] `.env.example` (`apps/api/.env.example`)
 - [ ] Mandatory APIs
 - [ ] Worker

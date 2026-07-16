@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobType {
+  EMAIL
+  SMS
+  NOTIFICATION
+}
+
+enum JobPriority {
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobAttemptStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+  STALLED
+}
+
+model Job {
+  id               String       @id @default(uuid())
+  type             JobType
+  payload          Json
+  priority         JobPriority  @default(NORMAL)
+  status           JobStatus    @default(QUEUED)
+  retryCount       Int          @default(0)
+  maxAttempts      Int          @default(3)
+  delayMs          Int?
+  runAt            DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  failedAt         DateTime?
+  cancelledAt      DateTime?
+  lastError        String?
+  processingTimeMs Int?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  attempts         JobAttempt[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([priority, createdAt])
+  @@index([type, createdAt])
+}
+
+model JobAttempt {
+  id               String           @id @default(uuid())
+  jobId            String
+  attemptNumber    Int
+  status           JobAttemptStatus
+  errorMessage     String?
+  startedAt        DateTime         @default(now())
+  completedAt      DateTime?
+  processingTimeMs Int?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  job              Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, attemptNumber])
+  @@index([jobId])
+  @@index([status])
+  @@index([jobId, status])
+}
