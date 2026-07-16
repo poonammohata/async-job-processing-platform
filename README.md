@@ -35,7 +35,7 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | Bonus features | Not implemented |
 | Bootstrap unit tests | Implemented |
 | Platform integration tests | Not implemented |
-| Docker Compose full application startup | Not implemented |
+| Docker Compose full application startup | Implemented |
 
 The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission, querying, cancellation, worker processing, queue controls, health, and metrics are available; remaining operational APIs are **not yet built**.
 
@@ -63,7 +63,7 @@ The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis
 - Queue pause and resume (`POST /api/queue/pause`, `POST /api/queue/resume`) — pause affects **waiting jobs only**; active jobs continue to completion
 - Health checks (`GET /api/health`) — PostgreSQL, Redis, worker heartbeat, and live queue counts
 - Metrics (`GET /api/metrics`) — historical stats from PostgreSQL, live queue depth from BullMQ (`queueLength` = waiting jobs only)
-- Docker Compose startup (planned)
+- Docker Compose startup
 - Architecture and API documentation
 
 ### Planned bonus features (initial implementation target)
@@ -96,9 +96,9 @@ The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis
 | **Prisma** | ORM, schema, and migrations |
 | **Redis** | BullMQ backend and worker heartbeat |
 | **BullMQ** | Queue, retries, priority, delay, pause |
-| **Docker Compose** | Local PostgreSQL and Redis (application containers planned) |
-| **Swagger** | Interactive API docs (planned) |
-| **Jest** | Unit and integration testing (planned) |
+| **Docker Compose** | Local PostgreSQL, Redis, and full platform containers |
+| **Swagger** | Interactive API docs at `/api/docs` |
+| **Jest** | Unit and E2E testing |
 
 ---
 
@@ -139,7 +139,8 @@ async-job-processing-platform/
 ├── docs/
 │   ├── DESIGN.md            # System design and ADRs
 │   └── API.md               # Planned API contracts
-├── docker-compose.yml       # Local PostgreSQL and Redis
+├── docker-compose.yml       # PostgreSQL, Redis, API, worker, migrate
+├── Dockerfile               # Multi-stage API/worker image
 ├── package.json             # Root workspace config
 └── README.md
 ```
@@ -220,18 +221,76 @@ npm run infra:reset   # stop containers and remove volumes
 
 ## Running with Docker
 
-Docker Compose currently starts **PostgreSQL and Redis only**:
+Start the complete platform (PostgreSQL, Redis, migrations, API, worker):
 
 ```bash
-npm run infra:up
+npm run docker:up
 ```
+
+Or directly:
+
+```bash
+docker compose up --build
+```
+
+No `.env` file is required for Docker Compose — service environment variables are defined in `docker-compose.yml`. Inside containers, PostgreSQL and Redis are reached by service name (`postgres`, `redis`). When running the API or worker **outside** Docker, use `localhost` (see `apps/api/.env.example`).
 
 | Service | Host port | Purpose |
 | ------- | --------- | ------- |
-| **postgres** | 5432 | Durable storage (`jobs_db`) |
+| **postgres** | 5433 | Durable storage (`jobs_db`; container listens on 5432) |
 | **redis** | 6379 | BullMQ queue backend |
+| **migrate** | — | Runs `prisma migrate deploy` once, then exits |
+| **api** | 3000 | NestJS REST API |
+| **worker** | — | BullMQ job processor (no public port) |
 
-Full platform startup (`api`, `worker`, migrations) via `docker compose up --build` remains **planned** and is not implemented yet.
+Startup order:
+
+1. `postgres` and `redis` become healthy
+2. `migrate` completes successfully
+3. `api` and `worker` start
+
+Useful URLs after startup:
+
+| Resource | URL |
+| -------- | --- |
+| API liveness | [http://localhost:3000/api](http://localhost:3000/api) |
+| Swagger UI | [http://localhost:3000/api/docs](http://localhost:3000/api/docs) |
+| OpenAPI JSON | [http://localhost:3000/api/docs-json](http://localhost:3000/api/docs-json) |
+| Health | [http://localhost:3000/api/health](http://localhost:3000/api/health) |
+| Metrics | [http://localhost:3000/api/metrics](http://localhost:3000/api/metrics) |
+
+Useful commands:
+
+```bash
+npm run docker:logs    # follow all service logs
+npm run docker:down    # stop containers
+npm run docker:reset   # stop containers and remove volumes
+```
+
+Infrastructure-only commands (PostgreSQL and Redis without API/worker):
+
+```bash
+npm run infra:up
+npm run infra:down
+npm run infra:logs
+npm run infra:reset
+```
+
+Example job submission against the Dockerized API:
+
+```bash
+curl -X POST http://localhost:3000/api/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "EMAIL",
+    "priority": "NORMAL",
+    "payload": {
+      "to": "john@example.com",
+      "subject": "Docker test",
+      "body": "Hello"
+    }
+  }'
+```
 
 ---
 
@@ -278,7 +337,7 @@ Set `DATABASE_URL` in `apps/api/.env` (see `apps/api/.env.example`). Commit migr
 
 Interactive Swagger documentation is enabled by default for local development and assignment review. Production deployments may restrict or disable it.
 
-Start the API with `npm run dev:api`, then open the Swagger UI URL above.
+Start the API with `npm run dev:api` (local) or `npm run docker:up` (Docker), then open the Swagger UI URL above.
 
 ---
 
@@ -334,7 +393,7 @@ See [docs/DESIGN.md — Future Improvements](./docs/DESIGN.md#future-improvement
 - [x] Architecture documentation (`docs/DESIGN.md`)
 - [x] API contract documentation (`docs/API.md`)
 - [x] Swagger or Postman collection
-- [ ] Docker Compose
+- [x] Docker Compose
 - [x] Database schema
 - [x] Migration files
 - [x] `.env.example` (`apps/api/.env.example`)

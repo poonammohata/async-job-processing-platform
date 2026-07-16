@@ -1,9 +1,25 @@
+x-app-environment: &app-environment
+  NODE_ENV: production
+  PORT: 3000
+  API_PREFIX: api
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/jobs_db?schema=public
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_PASSWORD: ''
+  QUEUE_NAME: jobs
+  MAX_JOB_ATTEMPTS: 3
+  JOB_BACKOFF_DELAY_MS: 1000
+  WORKER_CONCURRENCY: 1
+  WORKER_HEARTBEAT_INTERVAL_MS: 5000
+  WORKER_HEARTBEAT_TTL_MS: 15000
+  JOB_PROCESSING_DELAY_MS: 1000
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
-      - '5432:5432'
+      - '5433:5432'
     environment:
       POSTGRES_DB: jobs_db
       POSTGRES_USER: postgres
@@ -31,6 +47,57 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    command: npm exec --workspace=apps/api -- prisma migrate deploy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/jobs_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    command: ['node', 'apps/api/dist/main.js']
+    ports:
+      - '3000:3000'
+    environment:
+      <<: *app-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    command: ['node', 'apps/api/dist/worker.js']
+    environment:
+      <<: *app-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
