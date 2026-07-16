@@ -3,9 +3,11 @@ import { Job, JobStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   FindManyJobsOptions,
+  FindDeadLetterJobsOptions,
   JOB_LIST_SELECT,
   JobSummary,
   JobWithAttempts,
+  buildDeadLetterJobWhereInput,
 } from '../jobs.mapper';
 
 @Injectable()
@@ -32,6 +34,24 @@ export class JobRepository {
 
     return this.prisma.job.findMany({
       where: options.where,
+      select: JOB_LIST_SELECT,
+      skip,
+      take: options.pageSize,
+      orderBy: {
+        [options.sortBy]: options.order,
+      },
+    });
+  }
+
+  findDeadLetterJobs(options: FindDeadLetterJobsOptions): Promise<JobSummary[]> {
+    const skip = (options.page - 1) * options.pageSize;
+    const where = buildDeadLetterJobWhereInput({
+      type: options.type,
+      priority: options.priority,
+    });
+
+    return this.prisma.job.findMany({
+      where,
       select: JOB_LIST_SELECT,
       skip,
       take: options.pageSize,

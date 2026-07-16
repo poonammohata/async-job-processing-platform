@@ -56,6 +56,47 @@ export function buildJobWhereInput(filters: JobListFilters): Prisma.JobWhereInpu
   return where;
 }
 
+export const DEAD_LETTER_JOB_SORT_FIELDS = ['failedAt', 'createdAt'] as const;
+export type DeadLetterJobSortField =
+  (typeof DEAD_LETTER_JOB_SORT_FIELDS)[number];
+
+export interface DeadLetterJobListFilters {
+  type?: JobType;
+  priority?: JobPriority;
+}
+
+export interface FindDeadLetterJobsOptions {
+  page: number;
+  pageSize: number;
+  type?: JobType;
+  priority?: JobPriority;
+  sortBy: DeadLetterJobSortField;
+  order: Prisma.SortOrder;
+}
+
+export function buildDeadLetterJobWhereInput(
+  filters: DeadLetterJobListFilters,
+): Prisma.JobWhereInput {
+  const where: Prisma.JobWhereInput = {
+    status: JobStatus.FAILED,
+    // Conceptually dead-letter means retryCount >= maxAttempts, but Prisma
+    // cannot compare two row fields in a normal where clause. Enqueue failures
+    // are FAILED with retryCount = 0; the worker only marks FAILED on the final
+    // attempt with retryCount > 0, so this proxy excludes submission failures.
+    retryCount: { gt: 0 },
+  };
+
+  if (filters.type !== undefined) {
+    where.type = filters.type;
+  }
+
+  if (filters.priority !== undefined) {
+    where.priority = filters.priority;
+  }
+
+  return where;
+}
+
 export type JobWithAttempts = Prisma.JobGetPayload<{
   include: {
     attempts: true;

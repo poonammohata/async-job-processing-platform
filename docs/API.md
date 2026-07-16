@@ -657,7 +657,7 @@ Not required initially.
 
 ### Purpose
 
-List jobs that permanently failed after exhausting all retry attempts. Queries the **PostgreSQL-backed dead-letter view** (see [DESIGN.md — Dead-Letter Handling](./DESIGN.md#dead-letter-handling)).
+List jobs that permanently failed after exhausting all retry attempts. Queries the **PostgreSQL-backed dead-letter view** over existing `Job` records — not a separate BullMQ dead-letter queue (see [DESIGN.md — Dead-Letter Handling](./DESIGN.md#dead-letter-handling)).
 
 ### HTTP Method
 
@@ -676,9 +676,11 @@ Not required initially.
 | Name | Type | Required | Default | Constraints | Description |
 | ---- | ---- | -------- | ------- | ----------- | ----------- |
 | `page` | integer | No | `1` | `>= 1` | Page number |
-| `limit` | integer | No | `20` | `1`–`100` | Page size |
+| `pageSize` | integer | No | `20` | `1`–`100` | Page size |
 | `type` | string | No | — | Supported job types | Optional filter |
-| `sortOrder` | string | No | `desc` | `asc`, `desc` | Sort by `failedAt` or `createdAt` |
+| `priority` | string | No | — | `high`, `normal`, `low` | Optional filter |
+| `sortBy` | string | No | `failedAt` | `failedAt`, `createdAt` | Sort field |
+| `order` | string | No | `desc` | `asc`, `desc` | Sort order |
 
 ### Success Response
 
@@ -686,29 +688,32 @@ Not required initially.
 
 ```json
 {
-  "data": [
+  "items": [
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
-      "type": "sms",
-      "priority": "normal",
-      "status": "failed",
+      "type": "EMAIL",
+      "priority": "NORMAL",
+      "status": "FAILED",
       "retryCount": 3,
       "maxAttempts": 3,
       "lastError": "Simulated permanent failure",
       "failedAt": "2026-07-16T10:00:10.000Z",
-      "createdAt": "2026-07-16T10:00:00.000Z"
+      "createdAt": "2026-07-16T10:00:00.000Z",
+      "startedAt": "2026-07-16T10:00:01.000Z",
+      "completedAt": null,
+      "cancelledAt": null,
+      "processingTimeMs": 1000,
+      "updatedAt": "2026-07-16T10:00:10.000Z"
     }
   ],
-  "pagination": {
-    "page": 1,
-    "limit": 20,
-    "total": 1,
-    "totalPages": 1
-  }
+  "page": 1,
+  "pageSize": 20,
+  "total": 1,
+  "totalPages": 1
 }
 ```
 
-Only jobs with `status: failed` and exhausted attempts appear here.
+Only permanently failed jobs appear here: `status = FAILED` with exhausted processing attempts (`retryCount > 0`). Enqueue failures are excluded.
 
 ### Error Responses
 

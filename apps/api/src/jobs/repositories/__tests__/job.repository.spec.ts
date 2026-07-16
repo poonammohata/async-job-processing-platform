@@ -172,6 +172,58 @@ describe('JobRepository', () => {
     });
   });
 
+  describe('findDeadLetterJobs', () => {
+    it('filters permanently failed jobs with summary select and failedAt desc', async () => {
+      prisma.job.findMany.mockResolvedValue([job]);
+
+      await expect(
+        repository.findDeadLetterJobs({
+          page: 1,
+          pageSize: 20,
+          sortBy: 'failedAt',
+          order: 'desc',
+        }),
+      ).resolves.toEqual([job]);
+
+      expect(prisma.job.findMany).toHaveBeenCalledWith({
+        where: {
+          status: JobStatus.FAILED,
+          retryCount: { gt: 0 },
+        },
+        select: JOB_LIST_SELECT,
+        skip: 0,
+        take: 20,
+        orderBy: { failedAt: 'desc' },
+      });
+    });
+
+    it('applies optional type and priority filters with pagination', async () => {
+      prisma.job.findMany.mockResolvedValue([job]);
+
+      await repository.findDeadLetterJobs({
+        page: 2,
+        pageSize: 10,
+        type: JobType.EMAIL,
+        priority: JobPriority.HIGH,
+        sortBy: 'createdAt',
+        order: 'asc',
+      });
+
+      expect(prisma.job.findMany).toHaveBeenCalledWith({
+        where: {
+          status: JobStatus.FAILED,
+          retryCount: { gt: 0 },
+          type: JobType.EMAIL,
+          priority: JobPriority.HIGH,
+        },
+        select: JOB_LIST_SELECT,
+        skip: 10,
+        take: 10,
+        orderBy: { createdAt: 'asc' },
+      });
+    });
+  });
+
   describe('count', () => {
     it('returns the total for a where clause', async () => {
       prisma.job.count.mockResolvedValue(5);

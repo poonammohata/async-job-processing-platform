@@ -20,6 +20,7 @@ describe('JobsService', () => {
     markEnqueueFailed: jest.Mock;
     findById: jest.Mock;
     findMany: jest.Mock;
+    findDeadLetterJobs: jest.Mock;
     count: jest.Mock;
     markCancelled: jest.Mock;
   };
@@ -61,6 +62,7 @@ describe('JobsService', () => {
       markEnqueueFailed: jest.fn(),
       findById: jest.fn(),
       findMany: jest.fn(),
+      findDeadLetterJobs: jest.fn(),
       count: jest.fn(),
       markCancelled: jest.fn(),
     };
@@ -482,6 +484,99 @@ describe('JobsService', () => {
         'Job has already started processing and cannot be cancelled',
       );
       expect(jobRepository.markCancelled).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listDeadLetterJobs', () => {
+    const failedJob = {
+      ...createdJob,
+      status: JobStatus.FAILED,
+      retryCount: 3,
+      failedAt: new Date('2026-07-16T10:00:10.000Z'),
+      lastError: 'Simulated permanent failure',
+    };
+
+    it('returns paginated summary items without payload or attempts', async () => {
+      jobRepository.findDeadLetterJobs.mockResolvedValue([failedJob]);
+      jobRepository.count.mockResolvedValue(1);
+
+      const result = await service.listDeadLetterJobs({
+        page: 1,
+        pageSize: 20,
+      });
+
+      expect(jobRepository.findDeadLetterJobs).toHaveBeenCalledWith({
+        page: 1,
+        pageSize: 20,
+        type: undefined,
+        priority: undefined,
+        sortBy: 'failedAt',
+        order: 'desc',
+      });
+      expect(jobRepository.count).toHaveBeenCalledWith({
+        status: JobStatus.FAILED,
+        retryCount: { gt: 0 },
+      });
+      expect(result).toEqual({
+        items: [
+          expect.objectContaining({
+            id: failedJob.id,
+            status: JobStatus.FAILED,
+            lastError: 'Simulated permanent failure',
+          }),
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 1,
+        totalPages: 1,
+      });
+      expect(result.items[0]).not.toHaveProperty('payload');
+      expect(result.items[0]).not.toHaveProperty('attempts');
+    });
+
+    it('returns empty items when no dead-letter jobs exist', async () => {
+      jobRepository.findDeadLetterJobs.mockResolvedValue([]);
+      jobRepository.count.mockResolvedValue(0);
+
+      const result = await service.listDeadLetterJobs({});
+
+      expect(result).toEqual({
+        items: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 0,
+      });
+    });
+
+    it('forwards type and priority filters and calculates totalPages', async () => {
+      jobRepository.findDeadLetterJobs.mockResolvedValue([]);
+      jobRepository.count.mockResolvedValue(25);
+
+      const result = await service.listDeadLetterJobs({
+        type: JobType.SMS,
+        priority: JobPriority.HIGH,
+        page: 2,
+        pageSize: 10,
+        sortBy: 'createdAt',
+        order: 'asc',
+      });
+
+      expect(jobRepository.findDeadLetterJobs).toHaveBeenCalledWith({
+        page: 2,
+        pageSize: 10,
+        type: JobType.SMS,
+        priority: JobPriority.HIGH,
+        sortBy: 'createdAt',
+        order: 'asc',
+      });
+      expect(jobRepository.count).toHaveBeenCalledWith({
+        status: JobStatus.FAILED,
+        retryCount: { gt: 0 },
+        type: JobType.SMS,
+        priority: JobPriority.HIGH,
+      });
+      expect(result.totalPages).toBe(3);
     });
   });
 });

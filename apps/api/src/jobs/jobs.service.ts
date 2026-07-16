@@ -9,11 +9,14 @@ import { JobStatus } from '@prisma/client';
 import { AppConfiguration } from '../config/configuration';
 import { QueueService } from '../queue/queue.service';
 import { ListJobsDto } from './dto/list-jobs.dto';
+import { ListDeadLetterJobsDto } from './dto/list-dead-letter-jobs.dto';
 import { PaginatedJobsResponseDto } from './dto/paginated-jobs-response.dto';
 import { InvalidJobScheduleError } from './errors/invalid-job-schedule.error';
 import {
   buildJobWhereInput,
+  buildDeadLetterJobWhereInput,
   JobResponseDto,
+  JobSummary,
   toJobResponseDto,
   toJobSummaryResponseDto,
 } from './jobs.mapper';
@@ -181,6 +184,49 @@ export class JobsService {
       this.jobRepository.count(where),
     ]);
 
+    return this.toPaginatedSummaryResponse(jobs, page, pageSize, total);
+  }
+
+  async listDeadLetterJobs(
+    query: ListDeadLetterJobsDto,
+  ): Promise<PaginatedJobsResponseDto> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const sortBy = query.sortBy ?? 'failedAt';
+    const order = query.order ?? 'desc';
+    const where = buildDeadLetterJobWhereInput({
+      type: query.type,
+      priority: query.priority,
+    });
+
+    const [jobs, total] = await Promise.all([
+      this.jobRepository.findDeadLetterJobs({
+        page,
+        pageSize,
+        type: query.type,
+        priority: query.priority,
+        sortBy,
+        order,
+      }),
+      this.jobRepository.count(where),
+    ]);
+
+    this.logger.log({
+      event: 'DEAD_LETTER_JOBS_LISTED',
+      page,
+      pageSize,
+      total,
+    });
+
+    return this.toPaginatedSummaryResponse(jobs, page, pageSize, total);
+  }
+
+  private toPaginatedSummaryResponse(
+    jobs: JobSummary[],
+    page: number,
+    pageSize: number,
+    total: number,
+  ): PaginatedJobsResponseDto {
     return {
       items: jobs.map(toJobSummaryResponseDto),
       page,
