@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JobPriority, JobType } from '@prisma/client';
 import { InvalidJobScheduleError } from '../errors/invalid-job-schedule.error';
@@ -12,6 +12,7 @@ describe('JobsController', () => {
     createJob: jest.Mock;
     getJob: jest.Mock;
     listJobs: jest.Mock;
+    cancelJob: jest.Mock;
   };
 
   const baseDto: CreateJobDto = {
@@ -25,6 +26,7 @@ describe('JobsController', () => {
       createJob: jest.fn(),
       getJob: jest.fn(),
       listJobs: jest.fn(),
+      cancelJob: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -168,5 +170,33 @@ describe('JobsController', () => {
     await expect(
       controller.getJob('550e8400-e29b-41d4-a716-446655440000'),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('delegates DELETE /jobs/:id to JobsService.cancelJob', async () => {
+    const jobId = '550e8400-e29b-41d4-a716-446655440000';
+    jobsService.cancelJob.mockResolvedValue(undefined);
+
+    await expect(controller.cancelJob(jobId)).resolves.toBeUndefined();
+    expect(jobsService.cancelJob).toHaveBeenCalledWith(jobId);
+  });
+
+  it('propagates NotFoundException from cancelJob', async () => {
+    jobsService.cancelJob.mockRejectedValue(
+      new NotFoundException('Job not found'),
+    );
+
+    await expect(
+      controller.cancelJob('550e8400-e29b-41d4-a716-446655440000'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('propagates ConflictException from cancelJob', async () => {
+    jobsService.cancelJob.mockRejectedValue(
+      new ConflictException('Job cannot be cancelled in status: processing'),
+    );
+
+    await expect(
+      controller.cancelJob('550e8400-e29b-41d4-a716-446655440000'),
+    ).rejects.toThrow(ConflictException);
   });
 });

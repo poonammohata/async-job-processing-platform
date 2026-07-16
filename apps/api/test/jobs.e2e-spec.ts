@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { createE2eTestApp, E2eTestContext, InvalidJobScheduleError } from './e2e-test-app';
@@ -280,6 +280,75 @@ describe('JobsController (e2e)', () => {
         .expect(400);
 
       expect(context.jobsService.listJobs).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DELETE /api/jobs/:id', () => {
+    const jobId = '550e8400-e29b-41d4-a716-446655440000';
+
+    it('returns 204 when a queued job is cancelled', async () => {
+      context.jobsService.cancelJob.mockResolvedValue(undefined);
+
+      await request(context.app.getHttpServer() as App)
+        .delete(`/api/jobs/${jobId}`)
+        .expect(204);
+
+      expect(context.jobsService.cancelJob).toHaveBeenCalledWith(jobId);
+    });
+
+    it('returns 400 for an invalid UUID', async () => {
+      await request(context.app.getHttpServer() as App)
+        .delete('/api/jobs/not-a-uuid')
+        .expect(400);
+
+      expect(context.jobsService.cancelJob).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the job does not exist', async () => {
+      context.jobsService.cancelJob.mockRejectedValue(
+        new NotFoundException('Job not found'),
+      );
+
+      await request(context.app.getHttpServer() as App)
+        .delete(`/api/jobs/${jobId}`)
+        .expect(404)
+        .expect({
+          statusCode: 404,
+          message: 'Job not found',
+          error: 'Not Found',
+        });
+    });
+
+    it('returns 409 when the job is processing', async () => {
+      context.jobsService.cancelJob.mockRejectedValue(
+        new ConflictException('Job cannot be cancelled in status: processing'),
+      );
+
+      await request(context.app.getHttpServer() as App)
+        .delete(`/api/jobs/${jobId}`)
+        .expect(409)
+        .expect({
+          statusCode: 409,
+          message: 'Job cannot be cancelled in status: processing',
+          error: 'Conflict',
+        });
+    });
+
+    it('returns 409 when cancellation loses the worker race', async () => {
+      context.jobsService.cancelJob.mockRejectedValue(
+        new ConflictException(
+          'Job has already started processing and cannot be cancelled',
+        ),
+      );
+
+      await request(context.app.getHttpServer() as App)
+        .delete(`/api/jobs/${jobId}`)
+        .expect(409)
+        .expect({
+          statusCode: 409,
+          message: 'Job has already started processing and cannot be cancelled',
+          error: 'Conflict',
+        });
     });
   });
 });

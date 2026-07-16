@@ -154,4 +154,14 @@ export class JobRepository {
       },
     });
   }
+
+  markCancelled(id: string, cancelledAt: Date): Promise<Job> {
+    return this.prisma.job.update({
+      where: { id },
+      data: {
+        status: JobStatus.CANCELLED,
+        cancelledAt,
+      },
+    });
+  }
 }

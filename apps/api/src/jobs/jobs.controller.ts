@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -53,6 +54,12 @@ export class JobsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<JobResponseDto> {
     return this.jobsService.getJob(id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  cancelJob(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.jobsService.cancelJob(id);
   }
 
   private toPublicScheduleMessage(message: string): string {

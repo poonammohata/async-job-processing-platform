@@ -353,4 +353,27 @@ describe('JobRepository', () => {
       });
     });
   });
+
+  describe('markCancelled', () => {
+    it('updates status and cancelledAt', async () => {
+      const cancelledAt = new Date('2026-07-16T10:05:00.000Z');
+      const cancelledJob = {
+        ...job,
+        status: JobStatus.CANCELLED,
+        cancelledAt,
+      };
+      prisma.job.update.mockResolvedValue(cancelledJob);
+
+      await expect(
+        repository.markCancelled(job.id, cancelledAt),
+      ).resolves.toEqual(cancelledJob);
+      expect(prisma.job.update).toHaveBeenCalledWith({
+        where: { id: job.id },
+        data: {
+          status: JobStatus.CANCELLED,
+          cancelledAt,
+        },
+      });
+    });
+  });
 });

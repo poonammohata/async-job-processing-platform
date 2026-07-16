@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JobStatus } from '@prisma/client';
 import { AppConfiguration } from '../config/configuration';
@@ -17,6 +22,9 @@ import { CreateJobInput } from './types/create-job-input';
 import { CreateJobResult } from './types/create-job-result';
 
 const ENQUEUE_FAILURE_MESSAGE = 'Failed to enqueue job';
+const JOB_NOT_FOUND_MESSAGE = 'Job not found';
+const CANCELLATION_RACE_MESSAGE =
+  'Job has already started processing and cannot be cancelled';
 
 interface ResolvedSchedule {
   delayMs: number | null;
@@ -104,6 +112,53 @@ export class JobsService {
     return toJobResponseDto(job);
   }
 
+  async cancelJob(id: string): Promise<void> {
+    const job = await this.jobRepository.findById(id);
+
+    if (!job) {
+      throw new NotFoundException(JOB_NOT_FOUND_MESSAGE);
+    }
+
+    this.logger.log({
+      event: 'JOB_CANCEL_REQUESTED',
+      jobId: id,
+      status: job.status,
+    });
+
+    if (job.status !== JobStatus.QUEUED) {
+      this.logCancelConflict(id, job.status);
+      throw new ConflictException(
+        `Job cannot be cancelled in status: ${job.status.toLowerCase()}`,
+      );
+    }
+
+    // Queue removal is the deciding operation. The DB status check and queue
+    // removal are not atomic; the worker may acquire the job after the check.
+    // PostgreSQL is updated only after BullMQ removal succeeds.
+    try {
+      const removed = await this.queueService.removeJob(id);
+
+      if (!removed) {
+        this.logCancelConflict(id, job.status);
+        throw new ConflictException(CANCELLATION_RACE_MESSAGE);
+      }
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+
+      this.logCancelConflict(id, job.status);
+      throw new ConflictException(CANCELLATION_RACE_MESSAGE);
+    }
+
+    await this.jobRepository.markCancelled(id, new Date());
+
+    this.logger.log({
+      event: 'JOB_CANCELLED',
+      jobId: id,
+    });
+  }
+
   async listJobs(query: ListJobsDto): Promise<PaginatedJobsResponseDto> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
@@ -168,5 +223,13 @@ export class JobsService {
     }
 
     return { delayMs: null, runAt: null };
+  }
+
+  private logCancelConflict(jobId: string, status: JobStatus): void {
+    this.logger.warn({
+      event: 'JOB_CANCEL_CONFLICT',
+      jobId,
+      status,
+    });
   }
 }

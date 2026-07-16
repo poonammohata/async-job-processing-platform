@@ -33,6 +33,7 @@ export interface E2eTestContext {
     createJob: jest.Mock;
     getJob: jest.Mock;
     listJobs: jest.Mock;
+    cancelJob: jest.Mock;
   };
   queue: {
     pause: jest.Mock;
@@ -74,6 +75,7 @@ export async function createE2eTestApp(
     createJob: jest.fn(),
     getJob: jest.fn(),
     listJobs: jest.fn(),
+    cancelJob: jest.fn(),
   };
 
   const redis = {

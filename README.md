@@ -28,13 +28,16 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | GET /api/health | Implemented |
 | GET /api/metrics | Implemented |
 | Worker heartbeat | Implemented |
+| DELETE /api/jobs/:id (job cancellation) | Implemented |
 | Cancellation and remaining job APIs | Not implemented |
 | Bonus features | Not implemented |
 | Bootstrap unit tests | Implemented |
 | Platform integration tests | Not implemented |
 | Docker Compose full application startup | Not implemented |
 
-The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission, querying, worker processing, queue controls, health, and metrics are available; cancellation and remaining operational APIs are **not yet built**.
+The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission, querying, cancellation, worker processing, queue controls, health, and metrics are available; remaining operational APIs are **not yet built**.
+
+**Job cancellation:** Only queued or delayed jobs (status `QUEUED`) may be cancelled. Active jobs cannot be stopped mid-processing. Cancellation is best-effort: if a worker acquires the job before BullMQ removal succeeds, the API returns `409 Conflict` and the durable record is left unchanged.
 
 ---
 
@@ -49,6 +52,7 @@ The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis
 - Lifecycle states: queued, processing, completed, failed
 - Automatic retries with exponential backoff (3 total attempts)
 - Get single job; list jobs with pagination, status filter, and sort
+- Cancel queued or delayed jobs (`DELETE /api/jobs/:id`) — active jobs cannot be cancelled; best-effort due to worker race
 - Request validation (type, priority, payload)
 - Structured lifecycle logging
 - Queue pause and resume (`POST /api/queue/pause`, `POST /api/queue/resume`) — pause affects **waiting jobs only**; active jobs continue to completion

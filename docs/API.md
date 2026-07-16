@@ -543,7 +543,7 @@ No response body.
 | `400` | `VALIDATION_ERROR` | Invalid UUID | — |
 | `404` | `JOB_NOT_FOUND` | Unknown job | — |
 | `409` | `INVALID_STATE` | Job processing or terminal | `"Job cannot be cancelled in status: processing"` |
-| `409` | `CANCELLATION_RACE` | Worker acquired job first | `"Job is already being processed"` |
+| `409` | `CANCELLATION_RACE` | Worker acquired job first | `"Job has already started processing and cannot be cancelled"` |
 | `500` | `INTERNAL_ERROR` | Unexpected failure | — |
 
 #### Conflict example
@@ -552,7 +552,7 @@ No response body.
 {
   "statusCode": 409,
   "code": "CANCELLATION_RACE",
-  "message": "Job is already being processed and cannot be cancelled",
+  "message": "Job has already started processing and cannot be cancelled",
   "details": [],
   "timestamp": "2026-07-16T10:05:00.000Z",
   "path": "/api/jobs/550e8400-e29b-41d4-a716-446655440000"

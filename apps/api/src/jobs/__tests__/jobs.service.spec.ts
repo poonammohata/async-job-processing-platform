@@ -1,3 +1,4 @@
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -20,9 +21,11 @@ describe('JobsService', () => {
     findById: jest.Mock;
     findMany: jest.Mock;
     count: jest.Mock;
+    markCancelled: jest.Mock;
   };
   let queueService: {
     enqueue: jest.Mock;
+    removeJob: jest.Mock;
   };
 
   const maxAttempts = 3;
@@ -59,9 +62,11 @@ describe('JobsService', () => {
       findById: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
+      markCancelled: jest.fn(),
     };
     queueService = {
       enqueue: jest.fn(),
+      removeJob: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -384,6 +389,99 @@ describe('JobsService', () => {
           order: 'asc',
         }),
       );
+    });
+  });
+
+  describe('cancelJob', () => {
+    const jobWithAttempts = {
+      ...createdJob,
+      attempts: [],
+    };
+
+    beforeEach(() => {
+      jobRepository.markCancelled.mockResolvedValue({
+        ...createdJob,
+        status: JobStatus.CANCELLED,
+        cancelledAt: new Date('2026-07-16T10:05:00.000Z'),
+      });
+    });
+
+    it('throws NotFoundException when the job does not exist', async () => {
+      jobRepository.findById.mockResolvedValue(null);
+
+      await expect(service.cancelJob('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.cancelJob('missing')).rejects.toThrow(
+        'Job not found',
+      );
+      expect(queueService.removeJob).not.toHaveBeenCalled();
+      expect(jobRepository.markCancelled).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      JobStatus.PROCESSING,
+      JobStatus.COMPLETED,
+      JobStatus.FAILED,
+      JobStatus.CANCELLED,
+    ])('throws ConflictException for status %s', async (status) => {
+      jobRepository.findById.mockResolvedValue({
+        ...jobWithAttempts,
+        status,
+      });
+
+      await expect(service.cancelJob(createdJob.id)).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.cancelJob(createdJob.id)).rejects.toThrow(
+        `Job cannot be cancelled in status: ${status.toLowerCase()}`,
+      );
+      expect(queueService.removeJob).not.toHaveBeenCalled();
+      expect(jobRepository.markCancelled).not.toHaveBeenCalled();
+    });
+
+    it('marks the job cancelled only after queue removal succeeds', async () => {
+      jobRepository.findById.mockResolvedValue(jobWithAttempts);
+      queueService.removeJob.mockResolvedValue(true);
+
+      await service.cancelJob(createdJob.id);
+
+      expect(queueService.removeJob).toHaveBeenCalledWith(createdJob.id);
+      expect(jobRepository.markCancelled).toHaveBeenCalledWith(
+        createdJob.id,
+        expect.any(Date),
+      );
+      expect(queueService.removeJob.mock.invocationCallOrder[0]).toBeLessThan(
+        jobRepository.markCancelled.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('throws ConflictException when queue removal returns false', async () => {
+      jobRepository.findById.mockResolvedValue(jobWithAttempts);
+      queueService.removeJob.mockResolvedValue(false);
+
+      await expect(service.cancelJob(createdJob.id)).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.cancelJob(createdJob.id)).rejects.toThrow(
+        'Job has already started processing and cannot be cancelled',
+      );
+      expect(jobRepository.markCancelled).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException when queue removal throws', async () => {
+      jobRepository.findById.mockResolvedValue(jobWithAttempts);
+      queueService.removeJob.mockRejectedValue(
+        new Error('Job is locked by another worker'),
+      );
+
+      await expect(service.cancelJob(createdJob.id)).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.cancelJob(createdJob.id)).rejects.toThrow(
+        'Job has already started processing and cannot be cancelled',
+      );
+      expect(jobRepository.markCancelled).not.toHaveBeenCalled();
     });
   });
 });
