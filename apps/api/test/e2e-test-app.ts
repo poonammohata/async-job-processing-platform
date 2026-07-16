@@ -10,12 +10,18 @@ import { WorkerRedisConnectionService } from '../src/queue/worker-redis-connecti
 
 export interface E2eTestContext {
   app: INestApplication;
-  jobsService: { createJob: jest.Mock };
+  jobsService: {
+    createJob: jest.Mock;
+    getJob: jest.Mock;
+    listJobs: jest.Mock;
+  };
 }
 
 export async function createE2eTestApp(): Promise<E2eTestContext> {
   const jobsService = {
     createJob: jest.fn(),
+    getJob: jest.fn(),
+    listJobs: jest.fn(),
   };
 
   const moduleFixture: TestingModule = await Test.createTestingModule({

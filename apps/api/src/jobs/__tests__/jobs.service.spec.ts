@@ -17,6 +17,9 @@ describe('JobsService', () => {
   let jobRepository: {
     create: jest.Mock;
     markEnqueueFailed: jest.Mock;
+    findById: jest.Mock;
+    findMany: jest.Mock;
+    count: jest.Mock;
   };
   let queueService: {
     enqueue: jest.Mock;
@@ -53,6 +56,9 @@ describe('JobsService', () => {
     jobRepository = {
       create: jest.fn(),
       markEnqueueFailed: jest.fn(),
+      findById: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
     };
     queueService = {
       enqueue: jest.fn(),
@@ -278,6 +284,106 @@ describe('JobsService', () => {
       await expect(service.createJob(baseInput)).rejects.toThrow();
 
       expect(jobRepository.markEnqueueFailed).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getJob', () => {
+    const jobWithAttempts = {
+      ...createdJob,
+      attempts: [
+        {
+          id: 'attempt-1',
+          jobId: createdJob.id,
+          attemptNumber: 1,
+          status: 'COMPLETED',
+          errorMessage: null,
+          startedAt: new Date('2026-07-16T10:00:01.000Z'),
+          completedAt: new Date('2026-07-16T10:00:02.000Z'),
+          processingTimeMs: 1000,
+          createdAt: new Date('2026-07-16T10:00:01.000Z'),
+          updatedAt: new Date('2026-07-16T10:00:02.000Z'),
+        },
+      ],
+    };
+
+    it('returns mapped job details with attempts', async () => {
+      jobRepository.findById.mockResolvedValue(jobWithAttempts);
+
+      const result = await service.getJob(createdJob.id);
+
+      expect(jobRepository.findById).toHaveBeenCalledWith(createdJob.id);
+      expect(result.id).toBe(createdJob.id);
+      expect(result.payload).toEqual(createdJob.payload);
+      expect(result.attempts).toHaveLength(1);
+      expect(result.attempts[0].attemptNumber).toBe(1);
+    });
+
+    it('throws NotFoundException when the job does not exist', async () => {
+      jobRepository.findById.mockResolvedValue(null);
+
+      await expect(service.getJob('missing')).rejects.toThrow(
+        'Job missing not found',
+      );
+    });
+  });
+
+  describe('listJobs', () => {
+    it('returns paginated summary items without payload', async () => {
+      jobRepository.findMany.mockResolvedValue([createdJob]);
+      jobRepository.count.mockResolvedValue(1);
+
+      const result = await service.listJobs({
+        page: 1,
+        pageSize: 20,
+        status: JobStatus.QUEUED,
+      });
+
+      expect(jobRepository.findMany).toHaveBeenCalledWith({
+        page: 1,
+        pageSize: 20,
+        where: { status: JobStatus.QUEUED },
+        sortBy: 'createdAt',
+        order: 'desc',
+      });
+      expect(jobRepository.count).toHaveBeenCalledWith({
+        status: JobStatus.QUEUED,
+      });
+      expect(result).toEqual({
+        items: [
+          expect.objectContaining({
+            id: createdJob.id,
+            status: JobStatus.QUEUED,
+          }),
+        ],
+        page: 1,
+        pageSize: 20,
+        total: 1,
+        totalPages: 1,
+      });
+      expect(result.items[0]).not.toHaveProperty('payload');
+      expect(result.items[0]).not.toHaveProperty('attempts');
+    });
+
+    it('builds dynamic filters for type and priority', async () => {
+      jobRepository.findMany.mockResolvedValue([]);
+      jobRepository.count.mockResolvedValue(0);
+
+      await service.listJobs({
+        type: JobType.SMS,
+        priority: JobPriority.HIGH,
+        sortBy: 'createdAt',
+        order: 'asc',
+      });
+
+      expect(jobRepository.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            type: JobType.SMS,
+            priority: JobPriority.HIGH,
+          },
+          order: 'asc',
+        }),
+      );
     });
   });
 });

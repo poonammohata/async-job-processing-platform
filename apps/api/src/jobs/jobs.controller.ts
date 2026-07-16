@@ -2,14 +2,21 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { InvalidJobScheduleError } from './errors/invalid-job-schedule.error';
 import { CreateJobDto } from './dto/create-job.dto';
 import { CreateJobResponseDto } from './dto/create-job-response.dto';
+import { JobResponseDto } from './dto/job-response.dto';
+import { ListJobsDto } from './dto/list-jobs.dto';
+import { PaginatedJobsResponseDto } from './dto/paginated-jobs-response.dto';
 import { JobsService } from './jobs.service';
 
 @Controller('jobs')
@@ -34,6 +41,18 @@ export class JobsController {
 
       throw error;
     }
+  }
+
+  @Get()
+  listJobs(@Query() query: ListJobsDto): Promise<PaginatedJobsResponseDto> {
+    return this.jobsService.listJobs(query);
+  }
+
+  @Get(':id')
+  getJob(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<JobResponseDto> {
+    return this.jobsService.getJob(id);
   }
 
   private toPublicScheduleMessage(message: string): string {

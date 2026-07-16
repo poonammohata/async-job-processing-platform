@@ -1,9 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JobStatus } from '@prisma/client';
 import { AppConfiguration } from '../config/configuration';
 import { QueueService } from '../queue/queue.service';
+import { ListJobsDto } from './dto/list-jobs.dto';
+import { PaginatedJobsResponseDto } from './dto/paginated-jobs-response.dto';
 import { InvalidJobScheduleError } from './errors/invalid-job-schedule.error';
+import {
+  buildJobWhereInput,
+  JobResponseDto,
+  toJobResponseDto,
+  toJobSummaryResponseDto,
+} from './jobs.mapper';
 import { JobRepository } from './repositories/job.repository';
 import { CreateJobInput } from './types/create-job-input';
 import { CreateJobResult } from './types/create-job-result';
@@ -83,6 +91,47 @@ export class JobsService {
     return {
       jobId: job.id,
       status: 'queued',
+    };
+  }
+
+  async getJob(id: string): Promise<JobResponseDto> {
+    const job = await this.jobRepository.findById(id);
+
+    if (!job) {
+      throw new NotFoundException(`Job ${id} not found`);
+    }
+
+    return toJobResponseDto(job);
+  }
+
+  async listJobs(query: ListJobsDto): Promise<PaginatedJobsResponseDto> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const sortBy = query.sortBy ?? 'createdAt';
+    const order = query.order ?? 'desc';
+    const where = buildJobWhereInput({
+      status: query.status,
+      type: query.type,
+      priority: query.priority,
+    });
+
+    const [jobs, total] = await Promise.all([
+      this.jobRepository.findMany({
+        page,
+        pageSize,
+        where,
+        sortBy,
+        order,
+      }),
+      this.jobRepository.count(where),
+    ]);
+
+    return {
+      items: jobs.map(toJobSummaryResponseDto),
+      page,
+      pageSize,
+      total,
+      totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
     };
   }
 

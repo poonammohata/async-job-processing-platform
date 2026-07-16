@@ -1,18 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Job, JobStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-
-export interface FindManyJobsOptions {
-  page: number;
-  limit: number;
-  status?: JobStatus;
-  orderBy?: Prisma.SortOrder;
-}
-
-export interface FindManyJobsResult {
-  jobs: Job[];
-  total: number;
-}
+import {
+  FindManyJobsOptions,
+  JOB_LIST_SELECT,
+  JobSummary,
+  JobWithAttempts,
+} from '../jobs.mapper';
 
 @Injectable()
 export class JobRepository {
@@ -22,35 +16,38 @@ export class JobRepository {
     return this.prisma.job.create({ data });
   }
 
-  findById(id: string): Promise<Job | null> {
-    return this.prisma.job.findUnique({ where: { id } });
+  findById(id: string): Promise<JobWithAttempts | null> {
+    return this.prisma.job.findUnique({
+      where: { id },
+      include: {
+        attempts: {
+          orderBy: { attemptNumber: 'asc' },
+        },
+      },
+    });
   }
 
-  async findMany(options: FindManyJobsOptions): Promise<FindManyJobsResult> {
-    const skip = (options.page - 1) * options.limit;
-    const where: Prisma.JobWhereInput = options.status
-      ? { status: options.status }
-      : {};
-    const orderBy: Prisma.JobOrderByWithRelationInput = {
-      createdAt: options.orderBy ?? 'desc',
-    };
+  findMany(options: FindManyJobsOptions): Promise<JobSummary[]> {
+    const skip = (options.page - 1) * options.pageSize;
 
-    const [jobs, total] = await this.prisma.$transaction([
-      this.prisma.job.findMany({
-        where,
-        skip,
-        take: options.limit,
-        orderBy,
-      }),
-      this.prisma.job.count({ where }),
-    ]);
+    return this.prisma.job.findMany({
+      where: options.where,
+      select: JOB_LIST_SELECT,
+      skip,
+      take: options.pageSize,
+      orderBy: {
+        [options.sortBy]: options.order,
+      },
+    });
+  }
 
-    return { jobs, total };
+  count(where: Prisma.JobWhereInput): Promise<number> {
+    return this.prisma.job.count({ where });
   }
 
   async exists(id: string): Promise<boolean> {
-    const count = await this.prisma.job.count({ where: { id } });
-    return count > 0;
+    const total = await this.count({ id });
+    return total > 0;
   }
 
   markEnqueueFailed(

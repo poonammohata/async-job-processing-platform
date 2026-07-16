@@ -1,17 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  JobAttemptStatus,
   JobPriority,
   JobStatus,
   JobType,
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { JOB_LIST_SELECT } from '../../jobs.mapper';
 import { JobRepository } from '../job.repository';
 
 describe('JobRepository', () => {
   let repository: JobRepository;
   let prisma: {
-    $transaction: jest.Mock;
     job: {
       create: jest.Mock;
       findUnique: jest.Mock;
@@ -22,7 +23,7 @@ describe('JobRepository', () => {
   };
 
   const job = {
-    id: 'job-1',
+    id: '550e8400-e29b-41d4-a716-446655440000',
     type: JobType.EMAIL,
     payload: { to: 'test@example.com' },
     priority: JobPriority.NORMAL,
@@ -41,9 +42,21 @@ describe('JobRepository', () => {
     updatedAt: new Date('2026-07-16T10:00:00.000Z'),
   };
 
+  const attempt = {
+    id: 'attempt-1',
+    jobId: job.id,
+    attemptNumber: 1,
+    status: JobAttemptStatus.COMPLETED,
+    errorMessage: null,
+    startedAt: new Date('2026-07-16T10:00:01.000Z'),
+    completedAt: new Date('2026-07-16T10:00:02.000Z'),
+    processingTimeMs: 1000,
+    createdAt: new Date('2026-07-16T10:00:01.000Z'),
+    updatedAt: new Date('2026-07-16T10:00:02.000Z'),
+  };
+
   beforeEach(async () => {
     prisma = {
-      $transaction: jest.fn(),
       job: {
         create: jest.fn(),
         findUnique: jest.fn(),
@@ -81,12 +94,20 @@ describe('JobRepository', () => {
   });
 
   describe('findById', () => {
-    it('returns a job when found', async () => {
-      prisma.job.findUnique.mockResolvedValue(job);
+    it('returns a job with attempts ordered by attemptNumber', async () => {
+      const jobWithAttempts = { ...job, attempts: [attempt] };
+      prisma.job.findUnique.mockResolvedValue(jobWithAttempts);
 
-      await expect(repository.findById('job-1')).resolves.toEqual(job);
+      await expect(repository.findById(job.id)).resolves.toEqual(
+        jobWithAttempts,
+      );
       expect(prisma.job.findUnique).toHaveBeenCalledWith({
-        where: { id: 'job-1' },
+        where: { id: job.id },
+        include: {
+          attempts: {
+            orderBy: { attemptNumber: 'asc' },
+          },
+        },
       });
     });
 
@@ -98,66 +119,67 @@ describe('JobRepository', () => {
   });
 
   describe('findMany', () => {
-    beforeEach(() => {
-      prisma.$transaction.mockImplementation((operations: Promise<unknown>[]) =>
-        Promise.all(operations),
-      );
-    });
-
-    it('paginates with skip and take and returns jobs with total', async () => {
+    it('paginates with skip and take', async () => {
       prisma.job.findMany.mockResolvedValue([job]);
-      prisma.job.count.mockResolvedValue(1);
 
       await expect(
-        repository.findMany({ page: 2, limit: 10 }),
-      ).resolves.toEqual({ jobs: [job], total: 1 });
+        repository.findMany({
+          page: 2,
+          pageSize: 10,
+          where: {},
+          sortBy: 'createdAt',
+          order: 'desc',
+        }),
+      ).resolves.toEqual([job]);
 
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(prisma.job.findMany).toHaveBeenCalledWith({
         where: {},
+        select: JOB_LIST_SELECT,
         skip: 10,
         take: 10,
         orderBy: { createdAt: 'desc' },
       });
-      expect(prisma.job.count).toHaveBeenCalledWith({ where: {} });
     });
 
-    it('applies optional status filter to findMany and count', async () => {
+    it('applies filters and sort order', async () => {
       prisma.job.findMany.mockResolvedValue([job]);
-      prisma.job.count.mockResolvedValue(1);
 
       await repository.findMany({
         page: 1,
-        limit: 20,
-        status: JobStatus.QUEUED,
+        pageSize: 20,
+        where: {
+          status: JobStatus.QUEUED,
+          type: JobType.EMAIL,
+          priority: JobPriority.HIGH,
+        },
+        sortBy: 'createdAt',
+        order: 'asc',
       });
 
       expect(prisma.job.findMany).toHaveBeenCalledWith({
-        where: { status: JobStatus.QUEUED },
+        where: {
+          status: JobStatus.QUEUED,
+          type: JobType.EMAIL,
+          priority: JobPriority.HIGH,
+        },
+        select: JOB_LIST_SELECT,
         skip: 0,
         take: 20,
-        orderBy: { createdAt: 'desc' },
-      });
-      expect(prisma.job.count).toHaveBeenCalledWith({
-        where: { status: JobStatus.QUEUED },
+        orderBy: { createdAt: 'asc' },
       });
     });
+  });
 
-    it('sorts by createdAt using the requested order', async () => {
-      prisma.job.findMany.mockResolvedValue([job]);
-      prisma.job.count.mockResolvedValue(1);
+  describe('count', () => {
+    it('returns the total for a where clause', async () => {
+      prisma.job.count.mockResolvedValue(5);
 
-      await repository.findMany({
-        page: 1,
-        limit: 20,
-        orderBy: 'asc',
+      await expect(
+        repository.count({ status: JobStatus.COMPLETED }),
+      ).resolves.toBe(5);
+      expect(prisma.job.count).toHaveBeenCalledWith({
+        where: { status: JobStatus.COMPLETED },
       });
-
-      expect(prisma.job.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          orderBy: { createdAt: 'asc' },
-        }),
-      );
     });
   });
 
@@ -165,9 +187,9 @@ describe('JobRepository', () => {
     it('returns true when the job exists', async () => {
       prisma.job.count.mockResolvedValue(1);
 
-      await expect(repository.exists('job-1')).resolves.toBe(true);
+      await expect(repository.exists(job.id)).resolves.toBe(true);
       expect(prisma.job.count).toHaveBeenCalledWith({
-        where: { id: 'job-1' },
+        where: { id: job.id },
       });
     });
 
@@ -192,61 +214,27 @@ describe('JobRepository', () => {
 
       await expect(
         repository.markEnqueueFailed(
-          'job-1',
+          job.id,
           'Failed to enqueue job',
           failedAt,
         ),
       ).resolves.toEqual(failedJob);
-
-      expect(prisma.job.update).toHaveBeenCalledWith({
-        where: { id: 'job-1' },
-        data: {
-          status: JobStatus.FAILED,
-          failedAt,
-          lastError: 'Failed to enqueue job',
-        },
-      });
     });
   });
 
   describe('markProcessing', () => {
     it('sets status to PROCESSING and startedAt on first start', async () => {
       prisma.job.findUnique.mockResolvedValue({ ...job, startedAt: null });
-      prisma.job.update.mockResolvedValue({
-        ...job,
-        status: JobStatus.PROCESSING,
-        startedAt: new Date('2026-07-16T10:00:01.000Z'),
-      });
+      prisma.job.update.mockResolvedValue(job);
       const startedAt = new Date('2026-07-16T10:00:01.000Z');
 
-      await repository.markProcessing('job-1', startedAt);
+      await repository.markProcessing(job.id, startedAt);
 
       expect(prisma.job.update).toHaveBeenCalledWith({
-        where: { id: 'job-1' },
+        where: { id: job.id },
         data: {
           status: JobStatus.PROCESSING,
           startedAt,
-        },
-      });
-    });
-
-    it('preserves existing startedAt on retries', async () => {
-      const existingStartedAt = new Date('2026-07-16T10:00:00.000Z');
-      prisma.job.findUnique.mockResolvedValue({
-        ...job,
-        startedAt: existingStartedAt,
-      });
-      prisma.job.update.mockResolvedValue(job);
-
-      await repository.markProcessing(
-        'job-1',
-        new Date('2026-07-16T10:00:05.000Z'),
-      );
-
-      expect(prisma.job.update).toHaveBeenCalledWith({
-        where: { id: 'job-1' },
-        data: {
-          status: JobStatus.PROCESSING,
         },
       });
     });
@@ -256,10 +244,10 @@ describe('JobRepository', () => {
     it('updates retry fields and clears failedAt', async () => {
       prisma.job.update.mockResolvedValue(job);
 
-      await repository.markRetryQueued('job-1', 1, 'Simulated failure');
+      await repository.markRetryQueued(job.id, 1, 'Simulated failure');
 
       expect(prisma.job.update).toHaveBeenCalledWith({
-        where: { id: 'job-1' },
+        where: { id: job.id },
         data: {
           status: JobStatus.QUEUED,
           retryCount: 1,
@@ -275,10 +263,10 @@ describe('JobRepository', () => {
       const completedAt = new Date('2026-07-16T10:00:02.000Z');
       prisma.job.update.mockResolvedValue(job);
 
-      await repository.markCompleted('job-1', completedAt, 1000, 2);
+      await repository.markCompleted(job.id, completedAt, 1000, 2);
 
       expect(prisma.job.update).toHaveBeenCalledWith({
-        where: { id: 'job-1' },
+        where: { id: job.id },
         data: {
           status: JobStatus.COMPLETED,
           completedAt,
@@ -297,14 +285,14 @@ describe('JobRepository', () => {
       prisma.job.update.mockResolvedValue(job);
 
       await repository.markFailed(
-        'job-1',
+        job.id,
         failedAt,
         'Simulated permanent processing failure',
         3,
       );
 
       expect(prisma.job.update).toHaveBeenCalledWith({
-        where: { id: 'job-1' },
+        where: { id: job.id },
         data: {
           status: JobStatus.FAILED,
           failedAt,

@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JobPriority, JobType } from '@prisma/client';
 import { InvalidJobScheduleError } from '../errors/invalid-job-schedule.error';
@@ -8,7 +8,11 @@ import { JobsService } from '../jobs.service';
 
 describe('JobsController', () => {
   let controller: JobsController;
-  let jobsService: { createJob: jest.Mock };
+  let jobsService: {
+    createJob: jest.Mock;
+    getJob: jest.Mock;
+    listJobs: jest.Mock;
+  };
 
   const baseDto: CreateJobDto = {
     type: JobType.EMAIL,
@@ -19,6 +23,8 @@ describe('JobsController', () => {
   beforeEach(async () => {
     jobsService = {
       createJob: jest.fn(),
+      getJob: jest.fn(),
+      listJobs: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -127,5 +133,40 @@ describe('JobsController', () => {
     await expect(controller.createJob(baseDto)).rejects.not.toThrow(
       BadRequestException,
     );
+  });
+
+  it('delegates GET /jobs/:id to JobsService.getJob', async () => {
+    const jobId = '550e8400-e29b-41d4-a716-446655440000';
+    jobsService.getJob.mockResolvedValue({ id: jobId });
+
+    await expect(controller.getJob(jobId)).resolves.toEqual({ id: jobId });
+    expect(jobsService.getJob).toHaveBeenCalledWith(jobId);
+  });
+
+  it('delegates GET /jobs to JobsService.listJobs', async () => {
+    jobsService.listJobs.mockResolvedValue({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0,
+    });
+
+    await controller.listJobs({ page: 1, pageSize: 20 });
+
+    expect(jobsService.listJobs).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 20,
+    });
+  });
+
+  it('propagates NotFoundException from getJob', async () => {
+    jobsService.getJob.mockRejectedValue(
+      new NotFoundException('Job not found'),
+    );
+
+    await expect(
+      controller.getJob('550e8400-e29b-41d4-a716-446655440000'),
+    ).rejects.toThrow(NotFoundException);
   });
 });
