@@ -17,6 +17,7 @@ describe('JobRepository', () => {
       findUnique: jest.Mock;
       findMany: jest.Mock;
       count: jest.Mock;
+      update: jest.Mock;
     };
   };
 
@@ -48,6 +49,7 @@ describe('JobRepository', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
+        update: jest.fn(),
       },
     };
 
@@ -173,6 +175,37 @@ describe('JobRepository', () => {
       prisma.job.count.mockResolvedValue(0);
 
       await expect(repository.exists('missing')).resolves.toBe(false);
+    });
+  });
+
+  describe('markEnqueueFailed', () => {
+    it('updates status, failedAt, and lastError', async () => {
+      const failedAt = new Date('2026-07-16T12:00:00.000Z');
+      const failedJob = {
+        ...job,
+        status: JobStatus.FAILED,
+        failedAt,
+        lastError: 'Failed to enqueue job',
+      };
+
+      prisma.job.update.mockResolvedValue(failedJob);
+
+      await expect(
+        repository.markEnqueueFailed(
+          'job-1',
+          'Failed to enqueue job',
+          failedAt,
+        ),
+      ).resolves.toEqual(failedJob);
+
+      expect(prisma.job.update).toHaveBeenCalledWith({
+        where: { id: 'job-1' },
+        data: {
+          status: JobStatus.FAILED,
+          failedAt,
+          lastError: 'Failed to enqueue job',
+        },
+      });
     });
   });
 });

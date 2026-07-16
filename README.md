@@ -17,8 +17,9 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | Prisma module | Implemented |
 | PostgreSQL and Redis development infrastructure | Implemented |
 | BullMQ queue producer infrastructure | Implemented |
+| JobsService / submission orchestration | Implemented |
 | Worker | Not implemented |
-| Mandatory APIs | Not implemented |
+| Mandatory APIs (POST /jobs) | Not implemented |
 | Bonus features | Not implemented |
 | Bootstrap unit tests | Implemented |
 | Platform integration tests | Not implemented |

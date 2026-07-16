@@ -52,4 +52,19 @@ export class JobRepository {
     const count = await this.prisma.job.count({ where: { id } });
     return count > 0;
   }
+
+  markEnqueueFailed(
+    id: string,
+    errorMessage: string,
+    failedAt: Date,
+  ): Promise<Job> {
+    return this.prisma.job.update({
+      where: { id },
+      data: {
+        status: JobStatus.FAILED,
+        failedAt,
+        lastError: errorMessage,
+      },
+    });
+  }
 }

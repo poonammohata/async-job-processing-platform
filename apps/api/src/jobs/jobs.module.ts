@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { QueueModule } from '../queue/queue.module';
+import { JobsService } from './jobs.service';
 import { JobAttemptRepository } from './repositories/job-attempt.repository';
 import { JobRepository } from './repositories/job.repository';
 
 @Module({
-  imports: [PrismaModule],
-  providers: [JobRepository, JobAttemptRepository],
-  exports: [JobRepository, JobAttemptRepository],
+  imports: [PrismaModule, QueueModule],
+  providers: [JobRepository, JobAttemptRepository, JobsService],
+  exports: [JobRepository, JobAttemptRepository, JobsService],
 })
 export class JobsModule {}
