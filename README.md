@@ -18,14 +18,15 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | PostgreSQL and Redis development infrastructure | Implemented |
 | BullMQ queue producer infrastructure | Implemented |
 | JobsService / submission orchestration | Implemented |
+| POST /api/jobs | Implemented |
 | Worker | Not implemented |
-| Mandatory APIs (POST /jobs) | Not implemented |
+| Job status / listing APIs | Not implemented |
 | Bonus features | Not implemented |
 | Bootstrap unit tests | Implemented |
 | Platform integration tests | Not implemented |
 | Docker Compose full application startup | Not implemented |
 
-The repository contains a NestJS API scaffold under `apps/api` and local PostgreSQL/Redis via Docker Compose. Application containers, job APIs, and worker processing are **not yet built**.
+The repository contains a NestJS API scaffold under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission is available via `POST /api/jobs`; worker processing and remaining job APIs are **not yet built**.
 
 ---
 
