@@ -208,4 +208,110 @@ describe('JobRepository', () => {
       });
     });
   });
+
+  describe('markProcessing', () => {
+    it('sets status to PROCESSING and startedAt on first start', async () => {
+      prisma.job.findUnique.mockResolvedValue({ ...job, startedAt: null });
+      prisma.job.update.mockResolvedValue({
+        ...job,
+        status: JobStatus.PROCESSING,
+        startedAt: new Date('2026-07-16T10:00:01.000Z'),
+      });
+      const startedAt = new Date('2026-07-16T10:00:01.000Z');
+
+      await repository.markProcessing('job-1', startedAt);
+
+      expect(prisma.job.update).toHaveBeenCalledWith({
+        where: { id: 'job-1' },
+        data: {
+          status: JobStatus.PROCESSING,
+          startedAt,
+        },
+      });
+    });
+
+    it('preserves existing startedAt on retries', async () => {
+      const existingStartedAt = new Date('2026-07-16T10:00:00.000Z');
+      prisma.job.findUnique.mockResolvedValue({
+        ...job,
+        startedAt: existingStartedAt,
+      });
+      prisma.job.update.mockResolvedValue(job);
+
+      await repository.markProcessing(
+        'job-1',
+        new Date('2026-07-16T10:00:05.000Z'),
+      );
+
+      expect(prisma.job.update).toHaveBeenCalledWith({
+        where: { id: 'job-1' },
+        data: {
+          status: JobStatus.PROCESSING,
+        },
+      });
+    });
+  });
+
+  describe('markRetryQueued', () => {
+    it('updates retry fields and clears failedAt', async () => {
+      prisma.job.update.mockResolvedValue(job);
+
+      await repository.markRetryQueued('job-1', 1, 'Simulated failure');
+
+      expect(prisma.job.update).toHaveBeenCalledWith({
+        where: { id: 'job-1' },
+        data: {
+          status: JobStatus.QUEUED,
+          retryCount: 1,
+          lastError: 'Simulated failure',
+          failedAt: null,
+        },
+      });
+    });
+  });
+
+  describe('markCompleted', () => {
+    it('updates completion fields and clears errors', async () => {
+      const completedAt = new Date('2026-07-16T10:00:02.000Z');
+      prisma.job.update.mockResolvedValue(job);
+
+      await repository.markCompleted('job-1', completedAt, 1000, 2);
+
+      expect(prisma.job.update).toHaveBeenCalledWith({
+        where: { id: 'job-1' },
+        data: {
+          status: JobStatus.COMPLETED,
+          completedAt,
+          processingTimeMs: 1000,
+          retryCount: 2,
+          lastError: null,
+          failedAt: null,
+        },
+      });
+    });
+  });
+
+  describe('markFailed', () => {
+    it('updates failure fields', async () => {
+      const failedAt = new Date('2026-07-16T10:00:02.000Z');
+      prisma.job.update.mockResolvedValue(job);
+
+      await repository.markFailed(
+        'job-1',
+        failedAt,
+        'Simulated permanent processing failure',
+        3,
+      );
+
+      expect(prisma.job.update).toHaveBeenCalledWith({
+        where: { id: 'job-1' },
+        data: {
+          status: JobStatus.FAILED,
+          failedAt,
+          lastError: 'Simulated permanent processing failure',
+          retryCount: 3,
+        },
+      });
+    });
+  });
 });

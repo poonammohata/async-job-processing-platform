@@ -19,14 +19,15 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | BullMQ queue producer infrastructure | Implemented |
 | JobsService / submission orchestration | Implemented |
 | POST /api/jobs | Implemented |
-| Worker | Not implemented |
+| Worker / automatic job processing | Implemented |
+| Retry lifecycle synchronization | Implemented |
 | Job status / listing APIs | Not implemented |
 | Bonus features | Not implemented |
 | Bootstrap unit tests | Implemented |
 | Platform integration tests | Not implemented |
 | Docker Compose full application startup | Not implemented |
 
-The repository contains a NestJS API scaffold under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission is available via `POST /api/jobs`; worker processing and remaining job APIs are **not yet built**.
+The repository contains a NestJS API scaffold under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission and worker processing are available; remaining job APIs are **not yet built**.
 
 ---
 
@@ -167,6 +168,7 @@ Operational values below are **environment-configurable defaults** (exact names 
 | `MAX_JOB_ATTEMPTS` | Total attempts (default `3`) |
 | `JOB_BACKOFF_DELAY_MS` | Initial exponential backoff in ms (default `1000`) |
 | `WORKER_CONCURRENCY` | Parallel jobs per worker (default `1`) |
+| `JOB_PROCESSING_DELAY_MS` | Simulated processing delay in ms (default `1000`) |
 | `WORKER_HEARTBEAT_INTERVAL_MS` | Heartbeat refresh interval in ms (default `5000`) |
 | `WORKER_HEARTBEAT_TTL_MS` | Heartbeat stale threshold in ms (default `15000`) |
 
@@ -182,9 +184,13 @@ npm run infra:up
 ```
 
 3. Copy `apps/api/.env.example` to `apps/api/.env`
-4. Start API: `npm run dev:api`
+4. Apply migrations: `npm run prisma:migrate:deploy --workspace=apps/api`
+5. Start API: `npm run dev:api`
+6. In a second terminal, start the worker:
 
-Additional steps (Prisma migrations, worker) are planned and not yet implemented.
+```bash
+npm run start:worker:dev --workspace=apps/api
+```
 
 Useful infrastructure commands:
 
@@ -207,7 +213,7 @@ npm run infra:up
 | Service | Host port | Purpose |
 | ------- | --------- | ------- |
 | **postgres** | 5432 | Durable storage (`jobs_db`) |
-| **redis** | 6379 | Queue backend (future BullMQ) |
+| **redis** | 6379 | BullMQ queue backend |
 
 Full platform startup (`api`, `worker`, migrations) via `docker compose up --build` remains **planned** and is not implemented yet.
 

@@ -67,4 +67,68 @@ export class JobRepository {
       },
     });
   }
+
+  async markProcessing(id: string, startedAt: Date): Promise<Job> {
+    const existing = await this.prisma.job.findUnique({ where: { id } });
+
+    return this.prisma.job.update({
+      where: { id },
+      data: {
+        status: JobStatus.PROCESSING,
+        ...(existing?.startedAt ? {} : { startedAt }),
+      },
+    });
+  }
+
+  markRetryQueued(
+    id: string,
+    retryCount: number,
+    lastError: string,
+  ): Promise<Job> {
+    return this.prisma.job.update({
+      where: { id },
+      data: {
+        status: JobStatus.QUEUED,
+        retryCount,
+        lastError,
+        failedAt: null,
+      },
+    });
+  }
+
+  markCompleted(
+    id: string,
+    completedAt: Date,
+    processingTimeMs: number,
+    retryCount: number,
+  ): Promise<Job> {
+    return this.prisma.job.update({
+      where: { id },
+      data: {
+        status: JobStatus.COMPLETED,
+        completedAt,
+        processingTimeMs,
+        retryCount,
+        lastError: null,
+        failedAt: null,
+      },
+    });
+  }
+
+  markFailed(
+    id: string,
+    failedAt: Date,
+    lastError: string,
+    retryCount: number,
+  ): Promise<Job> {
+    return this.prisma.job.update({
+      where: { id },
+      data: {
+        status: JobStatus.FAILED,
+        failedAt,
+        lastError,
+        retryCount,
+      },
+    });
+  }
 }

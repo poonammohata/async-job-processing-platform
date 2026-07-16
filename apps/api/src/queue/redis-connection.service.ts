@@ -11,6 +11,18 @@ export class RedisConnectionService implements OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService<AppConfiguration, true>,
   ) {
+    this.connection = this.createConnection();
+  }
+
+  getConnection(): Redis {
+    return this.connection;
+  }
+
+  /**
+   * BullMQ Workers require a dedicated Redis connection because they use
+   * blocking commands and must not share the Queue producer connection.
+   */
+  createConnection(): Redis {
     const redisConfig = this.configService.get('redis', { infer: true });
     const options: RedisOptions = {
       host: redisConfig.host,
@@ -22,11 +34,7 @@ export class RedisConnectionService implements OnModuleDestroy {
       options.password = redisConfig.password;
     }
 
-    this.connection = new Redis(options);
-  }
-
-  getConnection(): Redis {
-    return this.connection;
+    return new Redis(options);
   }
 
   async onModuleDestroy(): Promise<void> {

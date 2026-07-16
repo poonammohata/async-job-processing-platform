@@ -6,6 +6,7 @@ import { JobsService } from '../src/jobs/jobs.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { JOB_QUEUE_TOKEN } from '../src/queue/queue.constants';
 import { RedisConnectionService } from '../src/queue/redis-connection.service';
+import { WorkerRedisConnectionService } from '../src/queue/worker-redis-connection.service';
 
 export interface E2eTestContext {
   app: INestApplication;
@@ -30,6 +31,16 @@ export async function createE2eTestApp(): Promise<E2eTestContext> {
       $disconnect: jest.fn().mockResolvedValue(undefined),
     })
     .overrideProvider(RedisConnectionService)
+    .useValue({
+      getConnection: () => ({
+        quit: jest.fn().mockResolvedValue('OK'),
+      }),
+      createConnection: () => ({
+        quit: jest.fn().mockResolvedValue('OK'),
+      }),
+      onModuleDestroy: jest.fn().mockResolvedValue(undefined),
+    })
+    .overrideProvider(WorkerRedisConnectionService)
     .useValue({
       getConnection: () => ({
         quit: jest.fn().mockResolvedValue('OK'),

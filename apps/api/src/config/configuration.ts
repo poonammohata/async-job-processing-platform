@@ -24,6 +24,7 @@ export interface QueueConfig {
 export interface WorkerConfig {
   heartbeatIntervalMs: number;
   heartbeatTtlMs: number;
+  processingDelayMs: number;
 }
 
 export interface AppConfiguration {
@@ -59,5 +60,6 @@ export default (): AppConfiguration => ({
       process.env.WORKER_HEARTBEAT_INTERVAL_MS ?? 5000,
     ),
     heartbeatTtlMs: Number(process.env.WORKER_HEARTBEAT_TTL_MS ?? 15000),
+    processingDelayMs: Number(process.env.JOB_PROCESSING_DELAY_MS ?? 1000),
   },
 });

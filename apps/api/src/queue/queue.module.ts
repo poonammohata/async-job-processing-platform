@@ -7,10 +7,12 @@ import { AppConfiguration } from '../config/configuration';
 import {
   JOB_QUEUE_CONNECTION_TOKEN,
   JOB_QUEUE_TOKEN,
+  JOB_WORKER_CONNECTION_TOKEN,
 } from './queue.constants';
 import { QueueJobData } from './queue.types';
 import { QueueService } from './queue.service';
 import { RedisConnectionService } from './redis-connection.service';
+import { WorkerRedisConnectionService } from './worker-redis-connection.service';
 
 @Module({
   imports: [AppConfigModule],
@@ -46,7 +48,19 @@ import { RedisConnectionService } from './redis-connection.service';
       inject: [ConfigService, JOB_QUEUE_CONNECTION_TOKEN],
     },
     QueueService,
+    WorkerRedisConnectionService,
+    {
+      provide: JOB_WORKER_CONNECTION_TOKEN,
+      useFactory: (workerRedisConnectionService: WorkerRedisConnectionService) =>
+        workerRedisConnectionService.getConnection(),
+      inject: [WorkerRedisConnectionService],
+    },
   ],
-  exports: [QueueService],
+  exports: [
+    QueueService,
+    RedisConnectionService,
+    WorkerRedisConnectionService,
+    JOB_WORKER_CONNECTION_TOKEN,
+  ],
 })
 export class QueueModule {}

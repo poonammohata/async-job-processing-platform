@@ -26,4 +26,5 @@ export const envValidationSchema = Joi.object({
       'number.greater':
         'WORKER_HEARTBEAT_TTL_MS must be greater than WORKER_HEARTBEAT_INTERVAL_MS',
     }),
+  JOB_PROCESSING_DELAY_MS: Joi.number().integer().min(0).default(1000),
 }).unknown(true);

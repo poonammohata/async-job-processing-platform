@@ -27,6 +27,7 @@ describe('QueueModule queue provider', () => {
       .overrideProvider(RedisConnectionService)
       .useValue({
         getConnection: () => connection,
+        createConnection: () => connection,
         onModuleDestroy: jest.fn(),
       })
       .overrideProvider(JOB_QUEUE_CONNECTION_TOKEN)
