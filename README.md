@@ -30,6 +30,7 @@ The design draws lightweight inspiration from concepts found in **AWS SQS**, **B
 | Worker heartbeat | Implemented |
 | DELETE /api/jobs/:id (job cancellation) | Implemented |
 | GET /api/dead-letter-jobs | Implemented |
+| Swagger / OpenAPI | Implemented |
 | Cancellation and remaining job APIs | Not implemented |
 | Bonus features | Not implemented |
 | Bootstrap unit tests | Implemented |
@@ -271,10 +272,13 @@ Set `DATABASE_URL` in `apps/api/.env` (see `apps/api/.env.example`). Commit migr
 
 | Resource | Location |
 | -------- | -------- |
-| Planned REST contracts | [docs/API.md](./docs/API.md) |
-| Swagger UI (planned) | `http://localhost:3000/api/docs` |
+| REST contracts | [docs/API.md](./docs/API.md) |
+| Swagger UI | [http://localhost:3000/api/docs](http://localhost:3000/api/docs) |
+| OpenAPI JSON | [http://localhost:3000/api/docs-json](http://localhost:3000/api/docs-json) |
 
-Swagger is **not yet available**.
+Interactive Swagger documentation is enabled by default for local development and assignment review. Production deployments may restrict or disable it.
+
+Start the API with `npm run dev:api`, then open the Swagger UI URL above.
 
 ---
 
@@ -329,7 +333,7 @@ See [docs/DESIGN.md — Future Improvements](./docs/DESIGN.md#future-improvement
 - [x] README
 - [x] Architecture documentation (`docs/DESIGN.md`)
 - [x] API contract documentation (`docs/API.md`)
-- [ ] Swagger or Postman collection
+- [x] Swagger or Postman collection
 - [ ] Docker Compose
 - [x] Database schema
 - [x] Migration files

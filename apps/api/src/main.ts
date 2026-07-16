@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { AppConfiguration } from './config/configuration';
+import { setupSwagger } from './swagger/swagger.setup';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -19,11 +20,13 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.enableShutdownHooks();
+  setupSwagger(app);
 
   await app.listen(port);
 
   const logger = new Logger('Bootstrap');
   logger.log(`Application is running on: http://localhost:${port}/${apiPrefix}`);
+  logger.log(`Swagger UI is available at: http://localhost:${port}/${apiPrefix}/docs`);
 }
 
 void bootstrap();

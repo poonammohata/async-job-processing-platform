@@ -7,6 +7,7 @@ import { JobsService } from '../src/jobs/jobs.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { JOB_QUEUE_TOKEN } from '../src/queue/queue.constants';
 import { RedisConnectionService } from '../src/queue/redis-connection.service';
+import { setupSwagger } from '../src/swagger/swagger.setup';
 import { WorkerRedisConnectionService } from '../src/queue/worker-redis-connection.service';
 
 export interface E2eTestAppOptions {
@@ -154,6 +155,7 @@ export async function createE2eTestApp(
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+  setupSwagger(app);
   await app.init();
 
   return {
