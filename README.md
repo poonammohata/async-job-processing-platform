@@ -2,86 +2,75 @@
 
 A scalable asynchronous job processing platform built with Node.js, TypeScript, and NestJS. Clients submit jobs through a REST API; work is persisted in PostgreSQL, queued in Redis via BullMQ, and processed by a separate worker process with automatic retries and operational visibility.
 
-The design draws lightweight inspiration from concepts found in **AWS SQS**, **BullMQ**, and **Sidekiq**. External delivery (email, SMS, notifications) is **simulated** by logging payloads — the focus is queue mechanics, durability, and observability.
+The design draws lightweight inspiration from concepts found in **AWS SQS**, **BullMQ**, and **Sidekiq**. External delivery (email, SMS, notifications) is **simulated** — the worker logs **payload keys** (not full values) and applies a configurable processing delay. The focus is queue mechanics, durability, and observability.
 
 ---
 
-## Current Implementation Status
+## Implementation Status
 
 | Area | Status |
 | ---- | ------ |
-| Project workspace and NestJS scaffold | Initialized |
-| Architecture design | Documented |
-| API contract documentation | Documented |
-| Prisma schema and initial migration | Implemented |
-| Prisma module | Implemented |
-| PostgreSQL and Redis development infrastructure | Implemented |
-| BullMQ queue producer infrastructure | Implemented |
-| JobsService / submission orchestration | Implemented |
-| POST /api/jobs | Implemented |
-| GET /api/jobs | Implemented |
-| GET /api/jobs/:id | Implemented |
-| Worker / automatic job processing | Implemented |
-| Retry lifecycle synchronization | Implemented |
-| POST /api/queue/pause | Implemented |
-| POST /api/queue/resume | Implemented |
-| GET /api/health | Implemented |
-| GET /api/metrics | Implemented |
+| Job submission (`POST /api/jobs`) | Implemented |
+| Worker processing (separate NestJS process) | Implemented |
+| Job status and listing | Implemented |
+| Automatic retries (3 total attempts, exponential backoff) | Implemented |
+| Priority queue (`HIGH`, `NORMAL`, `LOW`) | Implemented |
+| Delayed jobs | Implemented |
+| Scheduled jobs (`runAt`) | Implemented |
+| Job cancellation (queued/delayed only) | Implemented |
+| Queue pause and resume | Implemented |
+| Dead-letter view (`GET /api/dead-letter-jobs`) | Implemented |
 | Worker heartbeat | Implemented |
-| DELETE /api/jobs/:id (job cancellation) | Implemented |
-| GET /api/dead-letter-jobs | Implemented |
+| Health endpoint | Implemented |
+| Metrics endpoint | Implemented |
 | Swagger / OpenAPI | Implemented |
-| Cancellation and remaining job APIs | Not implemented |
-| Bonus features | Not implemented |
-| Bootstrap unit tests | Implemented |
-| Platform integration tests | Not implemented |
-| Docker Compose full application startup | Implemented |
+| Unit tests | Implemented |
+| E2E API tests | Implemented |
+| Docker Compose (full platform) | Implemented |
+| Graceful shutdown | Implemented |
+| JWT authentication | Not implemented |
+| Rate limiting | Not implemented |
+| Web dashboard | Not implemented |
 
-The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis via Docker Compose. Job submission, querying, cancellation, worker processing, queue controls, health, and metrics are available; remaining operational APIs are **not yet built**.
+**Job cancellation:** Only jobs in status `QUEUED` (including delayed or scheduled jobs not yet active) may be cancelled. Active jobs cannot be stopped mid-processing. BullMQ removal happens before PostgreSQL is marked `CANCELLED`. If a worker acquires the job first, the API returns `409 Conflict` and the durable record is left unchanged.
 
-**Job cancellation:** Only queued or delayed jobs (status `QUEUED`) may be cancelled. Active jobs cannot be stopped mid-processing. Cancellation is best-effort: if a worker acquires the job before BullMQ removal succeeds, the API returns `409 Conflict` and the durable record is left unchanged.
-
-**Dead-letter visibility:** `GET /api/dead-letter-jobs` exposes permanently failed jobs from PostgreSQL as a durable view. This is not a separate BullMQ dead-letter queue.
+**Dead-letter visibility:** `GET /api/dead-letter-jobs` exposes permanently failed jobs from PostgreSQL (`status = FAILED` with `retryCount > 0`). This is a durable view, not a separate BullMQ dead-letter queue. Enqueue failures (`retryCount = 0`) are excluded.
 
 ---
 
 ## Features
 
-### Mandatory features
+### Core capabilities
 
-- Submit jobs via REST API
-- Persist job metadata in PostgreSQL
-- Automatic asynchronous processing via BullMQ worker
-- Simulated execution (payload logging)
-- Lifecycle states: queued, processing, completed, failed
+- Submit jobs via REST API with validation
+- Persist job metadata and attempt history in PostgreSQL
+- Automatic asynchronous processing via a separate BullMQ worker
+- Simulated execution (payload **keys** logged, not values)
+- Lifecycle states: `QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED`, `CANCELLED`
 - Automatic retries with exponential backoff (3 total attempts)
-- Get single job; list jobs with pagination, status filter, and sort
-- Cancel queued or delayed jobs (`DELETE /api/jobs/:id`) — active jobs cannot be cancelled; best-effort due to worker race
-- List permanently failed jobs (`GET /api/dead-letter-jobs`) — PostgreSQL-backed dead-letter view, not a separate queue
-- Request validation (type, priority, payload)
-- Structured lifecycle logging
-- Queue pause and resume (`POST /api/queue/pause`, `POST /api/queue/resume`) — pause affects **waiting jobs only**; active jobs continue to completion
-- Health checks (`GET /api/health`) — PostgreSQL, Redis, worker heartbeat, and live queue counts
-- Metrics (`GET /api/metrics`) — historical stats from PostgreSQL, live queue depth from BullMQ (`queueLength` = waiting jobs only)
-- Docker Compose startup
+- Get single job (with attempts); list jobs with pagination, filters, and sort
+- Cancel queued or delayed jobs (`DELETE /api/jobs/:id`)
+- List permanently failed jobs (`GET /api/dead-letter-jobs`)
+- Queue pause and resume — pause affects **waiting jobs only**; active jobs continue
+- Health checks — PostgreSQL, Redis, worker heartbeat, live queue counts
+- Metrics — historical stats from PostgreSQL, live queue depth from BullMQ
+- Docker Compose startup for the full platform
 - Architecture and API documentation
 
-### Planned bonus features (initial implementation target)
+### Implemented bonus features
 
-- Priority queue (`high`, `normal`, `low`)
-- Delayed and scheduled jobs
-- Dead-letter visibility (PostgreSQL-backed view; dedicated BullMQ DLQ planned as future enhancement)
-- Multiple workers
-- Job cancellation (pre-processing)
-- Swagger / OpenAPI
-- Unit and integration tests
-- Graceful shutdown
+- Priority queue, delayed jobs, and scheduled jobs (`runAt`)
+- PostgreSQL-backed dead-letter view
+- Multiple worker instances supported by BullMQ (Docker Compose starts one worker by default)
+- Swagger / OpenAPI at `/api/docs`
+- Unit and E2E tests
+- Graceful shutdown (Nest shutdown hooks, BullMQ/Prisma/Redis cleanup)
 
-### Lower-priority optional features
+### Optional features (not implemented)
 
 - JWT authentication
 - Rate limiting
-- Optional web dashboard (`apps/web`)
+- Web dashboard
 
 ---
 
@@ -96,7 +85,7 @@ The repository contains a NestJS API under `apps/api` and local PostgreSQL/Redis
 | **Prisma** | ORM, schema, and migrations |
 | **Redis** | BullMQ backend and worker heartbeat |
 | **BullMQ** | Queue, retries, priority, delay, pause |
-| **Docker Compose** | Local PostgreSQL, Redis, and full platform containers |
+| **Docker Compose** | Local PostgreSQL, Redis, migrate, API, and worker |
 | **Swagger** | Interactive API docs at `/api/docs` |
 | **Jest** | Unit and E2E testing |
 
@@ -118,6 +107,7 @@ flowchart LR
 - The **worker** consumes from BullMQ, simulates processing, and updates PostgreSQL.
 - **PostgreSQL** is the durable source of truth for job history and queries.
 - **Redis/BullMQ** manages queue state, retries, and delays.
+- The database UUID is reused as the BullMQ job ID.
 
 Full design, lifecycle diagrams, and ADRs: **[docs/DESIGN.md](./docs/DESIGN.md)**
 
@@ -128,36 +118,38 @@ Full design, lifecycle diagrams, and ADRs: **[docs/DESIGN.md](./docs/DESIGN.md)*
 ```text
 async-job-processing-platform/
 ├── apps/
-│   └── api/                 # NestJS API and worker source
-│       ├── prisma/          # Schema and migrations
-│       │   ├── schema.prisma
-│       │   └── migrations/
-│       └── src/
-│           ├── prisma/      # PrismaModule and PrismaService
-│           ├── jobs/        # Job repositories
-│           └── queue/       # BullMQ queue producer
+│   └── api/
+│       ├── prisma/              # Schema and migrations
+│       ├── src/
+│       │   ├── common/validation/
+│       │   ├── config/
+│       │   ├── health/
+│       │   ├── jobs/
+│       │   ├── metrics/
+│       │   ├── prisma/
+│       │   ├── queue/
+│       │   ├── swagger/
+│       │   ├── worker/
+│       │   ├── main.ts          # API entrypoint
+│       │   └── worker.ts        # Worker entrypoint
+│       └── test/                # E2E tests
 ├── docs/
-│   ├── DESIGN.md            # System design and ADRs
-│   └── API.md               # Planned API contracts
-├── docker-compose.yml       # PostgreSQL, Redis, API, worker, migrate
-├── Dockerfile               # Multi-stage API/worker image
-├── package.json             # Root workspace config
+│   ├── DESIGN.md
+│   └── API.md
+├── docker-compose.yml
+├── Dockerfile
+├── package.json
 └── README.md
 ```
-
-**Not yet present:** `apps/web/`
 
 ---
 
 ## Prerequisites
 
-Planned development prerequisites:
-
-- **Node.js** — use an LTS release compatible with NestJS 11 (exact `engines` field to be added during implementation)
-- **npm** — package management (workspaces enabled)
-- **Docker** — container runtime
-- **Docker Compose** — multi-service local startup
-- **Git** — version control
+- **Node.js** — LTS release compatible with NestJS 11
+- **npm** — workspaces enabled at the repository root
+- **Docker** and **Docker Compose** — for PostgreSQL, Redis, and full platform startup
+- **Git**
 
 ---
 
@@ -169,52 +161,58 @@ Planned development prerequisites:
 | Context | Hostnames |
 | ------- | --------- |
 | Local processes (outside Docker) | `localhost` for PostgreSQL and Redis |
-| Docker Compose services | Service names such as `postgres` and `redis` |
+| Docker Compose services | Service names `postgres` and `redis` |
 
-### Planned environment variables
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `NODE_ENV` | Runtime environment | `development` |
+| `PORT` | API HTTP port | `3000` |
+| `API_PREFIX` | Global route prefix | `api` |
+| `DATABASE_URL` | PostgreSQL connection string | — |
+| `REDIS_HOST` | Redis hostname | `localhost` |
+| `REDIS_PORT` | Redis port | `6379` |
+| `REDIS_PASSWORD` | Redis password (empty for local) | — |
+| `QUEUE_NAME` | BullMQ queue name | `jobs` |
+| `MAX_JOB_ATTEMPTS` | Total attempts per job | `3` |
+| `JOB_BACKOFF_DELAY_MS` | Initial exponential backoff (ms) | `1000` |
+| `WORKER_CONCURRENCY` | Parallel jobs per worker | `1` |
+| `JOB_PROCESSING_DELAY_MS` | Simulated processing delay (ms) | `1000` |
+| `WORKER_HEARTBEAT_INTERVAL_MS` | Heartbeat refresh interval (ms) | `5000` |
+| `WORKER_HEARTBEAT_TTL_MS` | Heartbeat stale threshold (ms) | `15000` |
 
-Operational values below are **environment-configurable defaults** (exact names subject to implementation):
-
-| Variable | Description |
-| -------- | ----------- |
-| `PORT` | API HTTP port (default `3000`) |
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_HOST` | Redis hostname |
-| `REDIS_PORT` | Redis port |
-| `QUEUE_NAME` | BullMQ queue name |
-| `MAX_JOB_ATTEMPTS` | Total attempts (default `3`) |
-| `JOB_BACKOFF_DELAY_MS` | Initial exponential backoff in ms (default `1000`) |
-| `WORKER_CONCURRENCY` | Parallel jobs per worker (default `1`) |
-| `JOB_PROCESSING_DELAY_MS` | Simulated processing delay in ms (default `1000`) |
-| `WORKER_HEARTBEAT_INTERVAL_MS` | Heartbeat refresh interval in ms (default `5000`) |
-| `WORKER_HEARTBEAT_TTL_MS` | Heartbeat stale threshold in ms (default `15000`) |
+Docker Compose defines these variables inline in `docker-compose.yml`; no `.env` file is required for container startup.
 
 ---
 
 ## Running Locally
 
 1. Install dependencies: `npm install`
-2. Start PostgreSQL and Redis:
+2. Start PostgreSQL and Redis only:
 
 ```bash
 npm run infra:up
 ```
 
-3. Copy `apps/api/.env.example` to `apps/api/.env`
-4. Apply migrations: `npm run prisma:migrate:deploy --workspace=apps/api`
-5. Start API: `npm run dev:api`
+3. Copy `apps/api/.env.example` to `apps/api/.env` and set `DATABASE_URL` to use **`localhost:5433`**. Docker Compose maps host port **5433** to PostgreSQL **5432** inside the container (`5433:5432` in `docker-compose.yml`).
+4. Apply migrations:
+
+```bash
+npm run prisma:migrate:deploy --workspace=apps/api
+```
+
+5. Start the API: `npm run dev:api`
 6. In a second terminal, start the worker:
 
 ```bash
 npm run start:worker:dev --workspace=apps/api
 ```
 
-Useful infrastructure commands:
+Infrastructure-only commands (PostgreSQL and Redis without API/worker):
 
 ```bash
-npm run infra:down    # stop containers
-npm run infra:logs    # follow postgres and redis logs
-npm run infra:reset   # stop containers and remove volumes
+npm run infra:down
+npm run infra:logs
+npm run infra:reset
 ```
 
 ---
@@ -233,8 +231,6 @@ Or directly:
 docker compose up --build
 ```
 
-No `.env` file is required for Docker Compose — service environment variables are defined in `docker-compose.yml`. Inside containers, PostgreSQL and Redis are reached by service name (`postgres`, `redis`). When running the API or worker **outside** Docker, use `localhost` (see `apps/api/.env.example`).
-
 | Service | Host port | Purpose |
 | ------- | --------- | ------- |
 | **postgres** | 5433 | Durable storage (`jobs_db`; container listens on 5432) |
@@ -246,10 +242,10 @@ No `.env` file is required for Docker Compose — service environment variables 
 Startup order:
 
 1. `postgres` and `redis` become healthy
-2. `migrate` completes successfully
+2. `migrate` completes successfully (exit 0)
 3. `api` and `worker` start
 
-Useful URLs after startup:
+Useful URLs:
 
 | Resource | URL |
 | -------- | --- |
@@ -259,24 +255,15 @@ Useful URLs after startup:
 | Health | [http://localhost:3000/api/health](http://localhost:3000/api/health) |
 | Metrics | [http://localhost:3000/api/metrics](http://localhost:3000/api/metrics) |
 
-Useful commands:
+Docker commands:
 
 ```bash
-npm run docker:logs    # follow all service logs
-npm run docker:down    # stop containers
-npm run docker:reset   # stop containers and remove volumes
+npm run docker:logs
+npm run docker:down
+npm run docker:reset
 ```
 
-Infrastructure-only commands (PostgreSQL and Redis without API/worker):
-
-```bash
-npm run infra:up
-npm run infra:down
-npm run infra:logs
-npm run infra:reset
-```
-
-Example job submission against the Dockerized API:
+Example job submission:
 
 ```bash
 curl -X POST http://localhost:3000/api/jobs \
@@ -296,13 +283,7 @@ curl -X POST http://localhost:3000/api/jobs \
 
 ## Database Migrations
 
-Prisma schema lives in `apps/api/prisma/`. Start PostgreSQL first:
-
-```bash
-npm run infra:up
-```
-
-Common commands from the repository root:
+Prisma schema lives in `apps/api/prisma/`. Start PostgreSQL first (`npm run infra:up` or `npm run docker:up`).
 
 ```bash
 npm exec --workspace=apps/api -- prisma validate
@@ -321,9 +302,7 @@ npm run prisma:migrate:dev
 npm run prisma:migrate:deploy
 ```
 
-Set `DATABASE_URL` in `apps/api/.env` (see `apps/api/.env.example`). Commit migration SQL files under `apps/api/prisma/migrations/`.
-
-`prisma db push` is **not** used for deployment.
+Commit migration SQL under `apps/api/prisma/migrations/`. `prisma db push` is not used for deployment.
 
 ---
 
@@ -335,8 +314,6 @@ Set `DATABASE_URL` in `apps/api/.env` (see `apps/api/.env.example`). Commit migr
 | Swagger UI | [http://localhost:3000/api/docs](http://localhost:3000/api/docs) |
 | OpenAPI JSON | [http://localhost:3000/api/docs-json](http://localhost:3000/api/docs-json) |
 
-Interactive Swagger documentation is enabled by default for local development and assignment review. Production deployments may restrict or disable it.
-
 Start the API with `npm run dev:api` (local) or `npm run docker:up` (Docker), then open the Swagger UI URL above.
 
 ---
@@ -345,17 +322,16 @@ Start the API with `npm run dev:api` (local) or `npm run docker:up` (Docker), th
 
 | Category | Scope |
 | -------- | ----- |
-| Unit tests | Validation, repositories, services, queue, worker, health, metrics |
-| E2E tests | Jobs API, queue controls, health, metrics |
-| Integration tests | API + DB + queue + worker flows |
-| End-to-end lifecycle | Submit → process → complete / fail / retry |
-| Docker smoke test | `docker compose up` and basic job submission |
+| Unit tests | Validation, repositories, services, queue, worker, health, metrics (mocked dependencies) |
+| E2E API tests | HTTP endpoints via Nest test application (mocked Prisma/Redis where applicable) |
+| Manual Docker smoke tests | Full API + PostgreSQL + Redis + worker lifecycle (`docker compose up`, job submission, worker restart) |
 
-Commands:
+Jest does **not** start real PostgreSQL, Redis, or worker processes for unit or E2E tests.
 
 ```bash
-npm run test:api          # unit tests
-npm run test:e2e --workspace=apps/api   # integration/e2e
+npm run build:api
+npm run test:api
+npm run test:e2e --workspace=apps/api
 ```
 
 ---
@@ -370,19 +346,19 @@ Endpoint contracts: **[docs/API.md](./docs/API.md)**
 
 ## Assumptions
 
-See [docs/DESIGN.md — Assumptions](./docs/DESIGN.md#assumptions) for the full list. Key points: three total attempts, exponential backoff from 1000 ms, priorities `high` / `normal` / `low`, and `queueLength` = waiting jobs only.
+See [docs/DESIGN.md — Assumptions](./docs/DESIGN.md#assumptions). Key points: three total attempts, exponential backoff from 1000 ms, request enums `EMAIL`/`SMS`/`NOTIFICATION` and `HIGH`/`NORMAL`/`LOW`, response statuses in uppercase, and `queueLength` = waiting jobs only.
 
 ---
 
 ## Known Limitations
 
-Initial scope uses simulated processing, a PostgreSQL dead-letter view (not a separate queue), and no transactional outbox. See [docs/DESIGN.md — Known Limitations](./docs/DESIGN.md#known-limitations).
+Simulated processing, PostgreSQL dead-letter view (not a separate queue), no transactional outbox, no exactly-once delivery, no active-job cancellation, no JWT or rate limiting. See [docs/DESIGN.md — Known Limitations](./docs/DESIGN.md#known-limitations).
 
 ---
 
 ## Future Improvements
 
-See [docs/DESIGN.md — Future Improvements](./docs/DESIGN.md#future-improvements). Planned production enhancements include transactional outbox, dedicated DLQ, idempotency keys, Prometheus metrics, and optional JWT/dashboard.
+See [docs/DESIGN.md — Future Improvements](./docs/DESIGN.md#future-improvements). Includes transactional outbox, dedicated BullMQ DLQ, failed-job replay, idempotency keys, Prometheus export, and optional JWT/dashboard.
 
 ---
 
@@ -397,17 +373,19 @@ See [docs/DESIGN.md — Future Improvements](./docs/DESIGN.md#future-improvement
 - [x] Database schema
 - [x] Migration files
 - [x] `.env.example` (`apps/api/.env.example`)
-- [ ] Mandatory APIs
-- [ ] Worker
-- [ ] Retry handling
-- [ ] Validation
-- [ ] Logging
-- [ ] Unit tests
-- [ ] Integration tests
-- [ ] Clean Docker startup
+- [x] Mandatory APIs
+- [x] Worker
+- [x] Retry handling
+- [x] Validation
+- [x] Logging
+- [x] Unit tests
+- [x] E2E API tests
+- [x] Clean Docker startup
 
 ---
 
 ## License
 
-Private / UNLICENSED (see `apps/api/package.json`).
+UNLICENSED
+
+This repository is submitted solely for technical evaluation.

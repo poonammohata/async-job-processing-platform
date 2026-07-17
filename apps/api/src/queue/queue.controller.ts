@@ -17,7 +17,6 @@ export class QueueController {
     summary: 'Pause waiting jobs; active jobs continue to completion',
   })
   @ApiResponse({ status: 200, type: QueuePauseResponseDto })
-  @ApiResponse({ status: 503, description: 'Queue unavailable' })
   @ApiResponse({ status: 500, description: 'Unexpected server error' })
   pause(): Promise<QueuePauseResponseDto> {
     return this.queueManagementService.pause();
@@ -27,7 +26,6 @@ export class QueueController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resume assignment of waiting jobs to workers' })
   @ApiResponse({ status: 200, type: QueueResumeResponseDto })
-  @ApiResponse({ status: 503, description: 'Queue unavailable' })
   @ApiResponse({ status: 500, description: 'Unexpected server error' })
   resume(): Promise<QueueResumeResponseDto> {
     return this.queueManagementService.resume();

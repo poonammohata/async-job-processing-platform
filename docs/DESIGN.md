@@ -1,6 +1,6 @@
 # System Design: Asynchronous Job Processing Platform
 
-This document describes the planned architecture, behavior, and design decisions for a scalable asynchronous job processing platform. It reflects **planned** behavior unless explicitly noted otherwise. Application code, infrastructure, and tests are not yet implemented.
+This document describes the architecture, behavior, and design decisions for the implemented asynchronous job processing platform. Sections labeled **Future improvements** describe enhancements not yet built.
 
 ---
 
@@ -16,7 +16,7 @@ Asynchronous processing is required because:
 - **Failed work should be retryable** — transient infrastructure or downstream errors should be handled with controlled retries rather than immediate permanent failure.
 - **Job execution should remain observable and auditable** — operators and clients need durable status, attempt history, and operational metrics.
 
-Job execution is **intentionally simulated** (logging the payload) rather than calling real external providers. This keeps the focus on queue mechanics, persistence, retries, and observability.
+Job execution is **intentionally simulated** (the worker logs **payload keys**, not payload values) rather than calling real external providers. This keeps the focus on queue mechanics, persistence, retries, and observability.
 
 ---
 
@@ -29,39 +29,39 @@ Job execution is **intentionally simulated** (logging the payload) rather than c
 | Submit a job | Accept job submissions via REST API with validated type, priority, and payload |
 | Persist job metadata | Store durable job records in PostgreSQL before or alongside queue submission |
 | Automatically process queued jobs | Worker consumes jobs from BullMQ without manual intervention |
-| Simulate execution | Log payload and simulate processing; no real email/SMS delivery |
-| Track lifecycle states | Support `queued`, `processing`, `completed`, and `failed` states |
+| Simulate execution | Log payload keys and simulate processing; no real email/SMS delivery |
+| Track lifecycle states | Support `QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED`, and `CANCELLED` states |
 | Retry failures automatically | Re-queue failed attempts with exponential backoff |
 | Maximum three total attempts | One initial attempt plus up to two retries (three executions total) |
-| List jobs with pagination | `GET /jobs` returns summary fields only (no payload) |
-| Retrieve one job | `GET /jobs/:id` returns full job details including payload |
+| List jobs with pagination | `GET /api/jobs` returns summary fields only (no payload) |
+| Retrieve one job | `GET /api/jobs/:id` returns full job details including payload and attempts |
 | Filter by status | Optional status filter on list endpoint |
 | Sort by creation date | Default sort by `createdAt` ascending or descending |
 | Validate payload, priority, and type | Reject invalid requests with structured errors |
 | Log lifecycle events | Structured logs for major job and queue events |
-| Start full system via Docker Compose | Single command local startup (planned) |
+| Start full system via Docker Compose | Single command local startup (`npm run docker:up`) |
 | Document setup and design decisions | README, API reference, and this design document |
 
 ### Bonus
 
-| Feature | Initial implementation | Priority |
-| ------- | ---------------------- | -------- |
-| Priority queue (`high`, `normal`, `low`) | **Planned** | High |
-| Delayed jobs | **Planned** | High |
-| Scheduled jobs (`runAt`) | **Planned** | High |
-| Dead-letter visibility | **Planned** (PostgreSQL-backed view; no separate queue) | High |
-| Worker heartbeat | **Planned** | High |
-| Multiple workers | **Planned** | High |
-| Job cancellation (pre-processing only) | **Planned** | High |
-| Queue pause and resume | **Planned** | High |
-| Metrics (historical + live queue) | **Planned** | High |
-| Swagger / OpenAPI | **Planned** | High |
-| Unit tests | **Planned** | High |
-| Integration tests | **Planned** | High |
-| Graceful shutdown | **Planned** | High |
-| JWT authentication | Lower priority | Optional |
-| Rate limiting | Lower priority | Optional |
-| Optional web dashboard | Lower priority | Optional |
+| Feature | Status |
+| ------- | ------ |
+| Priority queue (`HIGH`, `NORMAL`, `LOW`) | **Implemented** |
+| Delayed jobs | **Implemented** |
+| Scheduled jobs (`runAt`) | **Implemented** |
+| Dead-letter visibility (PostgreSQL-backed view) | **Implemented** |
+| Worker heartbeat | **Implemented** |
+| Multiple workers | **Supported** (BullMQ; Docker Compose starts one worker by default) |
+| Job cancellation (pre-processing only) | **Implemented** |
+| Queue pause and resume | **Implemented** |
+| Metrics (historical + live queue) | **Implemented** |
+| Swagger / OpenAPI | **Implemented** |
+| Unit tests | **Implemented** |
+| E2E API tests | **Implemented** |
+| Graceful shutdown | **Implemented** |
+| JWT authentication | **Not implemented** |
+| Rate limiting | **Not implemented** |
+| Web dashboard | **Not implemented** |
 
 ---
 
@@ -80,7 +80,7 @@ Job execution is **intentionally simulated** (logging the payload) rather than c
 | **Predictable failure handling** | Bounded retries, explicit terminal failure, dead-letter visibility |
 | **Secure configuration** | Secrets via environment variables; `.env` excluded from version control |
 | **Reproducible local setup** | Docker Compose for consistent developer and evaluation environments |
-| **Testability** | Unit and integration tests for validation, state transitions, and end-to-end flows |
+| **Testability** | Unit and E2E API tests for validation, state transitions, and HTTP contracts |
 | **Reasonable API performance** | Read paths served from indexed PostgreSQL queries; submission returns promptly after persistence and enqueue |
 
 Numerical performance targets (requests per second, latency percentiles) are intentionally omitted until baseline measurements exist.
@@ -89,7 +89,7 @@ Numerical performance targets (requests per second, latency percentiles) are int
 
 ## Scope
 
-The initial system **plans to include**:
+The system **includes**:
 
 - NestJS REST API
 - Separate NestJS worker process
@@ -104,14 +104,14 @@ The initial system **plans to include**:
 - Queue pause and resume controls
 - Health and metrics endpoints
 - Swagger documentation
-- Unit and integration tests
+- Unit and E2E API tests
 - Docker Compose orchestration
 
 ---
 
 ## Out-of-Scope Items
 
-The initial system **does not include**:
+The submitted system **does not include**:
 
 - Real email delivery
 - Real SMS delivery
@@ -129,9 +129,10 @@ Job execution remains **simulated** by design for this stage.
 
 | Assumption | Detail |
 | ---------- | ------ |
-| Supported job types | `email`, `sms`, `notification` (extensible later) |
-| Priority values | `high`, `normal`, `low` (API uses lowercase) |
-| Internal DB enums | May use uppercase (e.g., `QUEUED`, `HIGH`) |
+| Supported job types | `EMAIL`, `SMS`, `NOTIFICATION` (request and response) |
+| Priority values | `HIGH`, `NORMAL`, `LOW` (request and response) |
+| POST acknowledgement status | Lowercase `"queued"` in `POST /api/jobs` response only |
+| Job status in GET responses | Uppercase (`QUEUED`, `PROCESSING`, …) |
 | Payload storage | JSON column in PostgreSQL |
 | Maximum attempts | Three **total** executions: one initial attempt plus up to two retries |
 | Backoff | Exponential backoff starting at **1000 ms** (env: `JOB_BACKOFF_DELAY_MS`) |
@@ -194,7 +195,7 @@ flowchart LR
 | **Redis** | BullMQ queue state; job reservation; locks; delays; priorities; retries; pause state; worker heartbeat keys |
 | **BullMQ** | Queue abstraction; retry scheduling; exponential backoff; priority; delayed execution; stalled-job recovery; concurrency coordination |
 | **Prisma** | Schema and migrations under `apps/api/prisma/`; type-safe data access |
-| **Docker Compose** | Reproducible startup; service networking; PostgreSQL; Redis; API; worker |
+| **Docker Compose** | Reproducible startup; service networking; PostgreSQL; Redis; migrate; API; worker |
 
 ---
 
@@ -232,7 +233,7 @@ PostgreSQL stores the **durable business record** for each job:
 
 PostgreSQL powers:
 
-- `GET /jobs` and `GET /jobs/:id`
+- `GET /api/jobs` and `GET /api/jobs/:id`
 - Historical metrics (completed, failed, average duration, success rate)
 - Dead-letter visibility (`FAILED` jobs that exhausted attempts)
 - Audit and debugging via attempt history
@@ -335,17 +336,18 @@ stateDiagram-v2
 - **`Job`** enables fast current-state queries.
 - **`JobAttempt`** provides detailed execution history.
 
-### JobAttempt fields (planned)
+### JobAttempt fields
 
 | Field | Description |
 | ----- | ----------- |
 | Attempt number | 1, 2, or 3 (unique per job) |
-| Status | e.g., `PROCESSING`, `COMPLETED`, `FAILED`, `STALLED` |
+| Status | `PROCESSING`, `COMPLETED`, or `FAILED` (written by worker) |
 | `startedAt` | When attempt began |
 | `completedAt` | When attempt finished |
 | `processingTimeMs` | Processing duration in milliseconds |
 | `errorMessage` | Present on failure |
-| Stalled information | Optional metadata if stalled recovery occurred |
+
+The Prisma schema also defines `STALLED` as an attempt status, but the worker does not persist it today. BullMQ stalled-job events are logged operationally (`JOB_STALLED`) without updating attempt records.
 
 ### Benefits and costs
 
@@ -394,9 +396,9 @@ Unique constraint: `(jobId, attemptNumber)`.
 
 | API priority | BullMQ priority | Notes |
 | ------------ | --------------- | ----- |
-| `high` | 1 | Lower BullMQ number = higher priority |
-| `normal` | 5 | Default |
-| `low` | 10 | Deprioritized among waiting jobs |
+| `HIGH` | 1 | Lower BullMQ number = higher priority |
+| `NORMAL` | 5 | Required on submission |
+| `LOW` | 10 | Deprioritized among waiting jobs |
 
 Priority affects **waiting** jobs only. A high-priority job does **not** preempt an already active job.
 
@@ -421,11 +423,12 @@ Priority affects **waiting** jobs only. A high-priority job does **not** preempt
 
 ## Dead-Letter Handling
 
-### Initial implementation (planned)
+### Implemented approach
 
 - Jobs that exhaust all **three total attempts** are marked **`FAILED`** in PostgreSQL and remain in the `Job` table.
-- `GET /dead-letter-jobs` queries permanently failed jobs from PostgreSQL — a **PostgreSQL-backed dead-letter view**.
-- Failed jobs are **not moved** to a separate queue in the initial implementation; the endpoint is a durable, filterable view over existing records.
+- `GET /api/dead-letter-jobs` queries permanently failed jobs from PostgreSQL — a **PostgreSQL-backed dead-letter view**.
+- Filter: `status = FAILED` and `retryCount > 0` (excludes enqueue failures with `retryCount = 0`).
+- Failed jobs are **not moved** to a separate queue; the endpoint is a durable, filterable view over existing records.
 
 ### Future enhancement
 
@@ -438,7 +441,7 @@ Priority affects **waiting** jobs only. A high-priority job does **not** preempt
 - Easier querying, filtering, and pagination
 - Adequate for the assignment
 
-A dedicated BullMQ DLQ remains a **future enhancement** and is not part of the initial scope.
+A dedicated BullMQ DLQ remains a **future enhancement** and is not part of the submitted implementation.
 
 ---
 
@@ -464,7 +467,7 @@ sequenceDiagram
     participant BQ as BullMQ
     participant Worker
 
-    Client->>API: DELETE /jobs/:id
+    Client->>API: DELETE /api/jobs/:id
     API->>PG: Read job (status=QUEUED)
     alt Worker acquires job first
         Worker->>BQ: Claim job
@@ -484,8 +487,8 @@ sequenceDiagram
 
 ## Queue Pause and Resume Behavior
 
-- **`POST /queue/pause`** — prevents new **waiting** jobs from being assigned; **active** jobs continue to completion.
-- **`POST /queue/resume`** — waiting jobs become eligible for assignment again.
+- **`POST /api/queue/pause`** — prevents new **waiting** jobs from being assigned; **active** jobs continue to completion.
+- **`POST /api/queue/resume`** — waiting jobs become eligible for assignment again.
 - Pausing does **not** freeze arbitrary in-flight JavaScript; active execution runs to completion or failure.
 - Pausing active work mid-execution would require cooperative checkpoints and persisted progress (out of scope).
 
@@ -493,10 +496,10 @@ sequenceDiagram
 
 ## Worker Heartbeat
 
-Planned worker liveness uses Redis keys following this **naming convention** (not a public API contract):
+Worker liveness uses a single Redis key (not a public API contract):
 
 ```text
-worker:heartbeat:<workerId>
+worker:heartbeat
 ```
 
 | Setting | Default | Environment variable |
@@ -504,7 +507,7 @@ worker:heartbeat:<workerId>
 | Refresh interval | 5 seconds | `WORKER_HEARTBEAT_INTERVAL_MS` |
 | Stale threshold / TTL | 15 seconds | `WORKER_HEARTBEAT_TTL_MS` |
 
-The health endpoint treats a worker as alive when its heartbeat was refreshed recently. Expiry handles crashed workers without manual cleanup.
+The worker sets `worker:heartbeat` to the current timestamp (`SET … PX <ttl>`) on an interval. On shutdown, the key is deleted. The health endpoint treats the worker as running when the key exists and `(Date.now() - heartbeat) < WORKER_HEARTBEAT_TTL_MS`.
 
 **Limitation:** Heartbeat proves recent process activity, not per-job progress.
 
@@ -514,19 +517,23 @@ The health endpoint treats a worker as alive when its heartbeat was refreshed re
 
 Health and metrics are **separate concerns**.
 
-### Health (`GET /health`)
+### Health (`GET /api/health`)
 
 | Check | Source |
 | ----- | ------ |
 | API process | Process is running and handling requests |
-| PostgreSQL | Connectivity probe |
-| Redis | Connectivity probe |
-| Worker heartbeat | Recent Redis heartbeat key |
-| Queue counts | BullMQ: waiting, active, delayed |
+| PostgreSQL | `$queryRaw SELECT 1` connectivity probe |
+| Redis | `PING` connectivity probe |
+| Worker heartbeat | Redis key `worker:heartbeat` age vs TTL |
+| Queue counts | BullMQ: waiting, active, delayed, completed, failed |
 
-**Degraded:** One or more non-critical dependencies unhealthy (e.g., worker heartbeat stale but DB/Redis OK).
+Response `status` values: `ok`, `degraded`, `down`.
 
-**Unavailable:** Critical dependencies unreachable (e.g., PostgreSQL or Redis down).
+| Overall status | HTTP | Condition |
+| -------------- | ---- | --------- |
+| `ok` | 200 | DB + Redis connected; worker heartbeat fresh |
+| `degraded` | 200 | DB + Redis connected; worker heartbeat stale or missing |
+| `down` | **503** | PostgreSQL or Redis disconnected |
 
 ### Historical metrics (PostgreSQL)
 
@@ -538,78 +545,82 @@ Health and metrics are **separate concerns**.
 | Average processing time | Mean of `processingTimeMs` for completed jobs |
 | Success rate | `completedJobs / jobsProcessed * 100`; **0** when `jobsProcessed = 0` |
 
-### Live BullMQ metrics
+### Live BullMQ metrics (`GET /api/metrics`)
 
 | Metric | Definition |
 | ------ | ---------- |
-| Waiting jobs | Jobs ready to be picked up (`queueLength`) |
-| Active jobs | Jobs currently being processed |
-| Delayed jobs | Jobs waiting for delay/schedule |
-| Paused | Whether queue consumption is paused |
+| `queueLength` | Waiting jobs only |
+| `activeJobs` | Jobs currently being processed |
+| Pause state | Not exposed on metrics endpoint (use health queue counts or queue controls) |
 
 ---
 
 ## Logging Strategy
 
-Structured lifecycle log events:
+Structured lifecycle log events emitted by the application:
 
-| Event | When |
-| ----- | ---- |
-| `JOB_RECEIVED` | API accepts submission |
-| `JOB_QUEUED` | Persisted and enqueued |
-| `JOB_STARTED` | Worker begins attempt |
-| `JOB_COMPLETED` | Attempt/job succeeds |
-| `JOB_FAILED` | Attempt or job fails |
-| `JOB_RETRY_SCHEDULED` | Retry backoff scheduled |
-| `JOB_CANCELLED` | Job cancelled |
-| `JOB_STALLED` | Stalled job detected |
-| `QUEUE_PAUSED` | Queue paused |
-| `QUEUE_RESUMED` | Queue resumed |
-| `WORKER_STARTED` | Worker process up |
-| `WORKER_STOPPING` | Graceful shutdown begins |
+| Event | Source | When |
+| ----- | ------ | ---- |
+| `JOB_RECEIVED` | API | Job persisted, before enqueue |
+| `JOB_QUEUED` | API | Successfully enqueued |
+| `JOB_ENQUEUE_FAILED` | API | BullMQ enqueue failed |
+| `JOB_CANCEL_REQUESTED` | API | Cancellation requested |
+| `JOB_CANCELLED` | API | Cancellation succeeded |
+| `JOB_CANCEL_CONFLICT` | API | Cancellation rejected (409 path) |
+| `DEAD_LETTER_JOBS_LISTED` | API | Dead-letter list queried |
+| `WORKER_STARTED` | Worker | Worker process up |
+| `WORKER_STOPPING` | Worker | Graceful shutdown begins |
+| `WORKER_JOB_COMPLETED` | Worker | BullMQ job handler succeeded |
+| `WORKER_JOB_FAILED` | Worker | BullMQ job handler failed |
+| `WORKER_ERROR` | Worker | Worker infrastructure error |
+| `JOB_STARTED` | Worker | Attempt begins (DB updated) |
+| `JOB_PROCESSING` | Worker | Simulated work starts (`payloadKeys` logged, not values) |
+| `JOB_COMPLETED` | Worker | Attempt/job succeeds |
+| `JOB_FAILED` | Worker | Final attempt fails |
+| `JOB_RETRY_SCHEDULED` | Worker | Non-final attempt fails, retry pending |
+| `JOB_STALLED` | Worker | BullMQ stalled-job event (operational) |
 
-Each log should include relevant fields: job ID, job type, attempt number, status, duration, error message, timestamp.
-
-Payload logging is acceptable for **simulation**; production systems should redact sensitive fields.
+Each log includes the fields relevant to that event, such as job ID, job type, attempt number, retry count, duration, and error message.
 
 ---
 
 ## Graceful Shutdown
 
+Both API and worker call `app.enableShutdownHooks()`. NestJS `OnModuleDestroy` handlers run on SIGTERM/SIGINT:
+
 ### API
 
-1. Stop accepting new HTTP requests.
-2. Close BullMQ queue connections.
-3. Disconnect Prisma.
-4. Close Redis connections.
+1. Stop accepting new HTTP requests (Nest shutdown).
+2. Close BullMQ queue connection (`queue.close()`).
+3. Disconnect Prisma (`$disconnect()`).
+4. Close Redis connection (`quit()`).
 
 ### Worker
 
-1. Stop accepting new jobs from BullMQ.
-2. Allow active processing to finish (within grace period).
-3. Close BullMQ worker connection.
-4. Stop heartbeat refreshes.
-5. Disconnect Prisma and Redis.
+1. Stop accepting new jobs (`worker.close()` — waits for active jobs).
+2. Clear heartbeat interval and delete `worker:heartbeat`.
+3. Close BullMQ worker and queue connections.
+4. Disconnect Prisma and Redis.
 
-Docker should configure a **shutdown grace period** sufficient for in-flight attempts to complete.
+Docker Compose does not configure a custom `stop_grace_period`; rely on Nest/BullMQ close semantics and container default stop timeout.
 
 ---
 
 ## Docker Architecture
 
-### Planned services
+### Compose services
 
 | Service | Role |
 | ------- | ---- |
+| `postgres` | Durable storage (host port **5433** → container 5432) |
+| `redis` | BullMQ backend |
+| `migrate` | One-time `prisma migrate deploy` (runs before API/worker) |
 | `api` | NestJS HTTP server (port 3000) |
 | `worker` | NestJS worker (no public port) |
-| `postgres` | Durable storage |
-| `redis` | BullMQ backend |
-| `migrate` (optional) | One-time Prisma migration runner |
 
-- API and worker share the **same application image** with different commands.
+- API and worker share the **same Docker image** with different commands.
 - Internal hostnames: `postgres`, `redis` (not `localhost` inside containers).
-- Health checks gate readiness where appropriate.
+- Health checks gate API readiness; migrate must exit 0 before API/worker start.
 - Named volumes persist PostgreSQL and Redis data.
 
 ### Diagram 5: Docker Service Topology
@@ -623,16 +634,22 @@ flowchart TB
     subgraph Compose[Docker Compose network]
         API[api container]
         Worker[worker container]
+        Migrate[migrate container]
         PG[(postgres container)]
         Redis[(redis container)]
     end
 
     Port3000 --> API
+
+    PG -->|healthy| Migrate
+    Migrate -->|prisma migrate deploy| PG
+    Migrate -->|exit 0 before startup| API
+    Migrate -->|exit 0 before startup| Worker
+
     API -->|DATABASE_URL| PG
-    API -->|REDIS| Redis
+    API -->|Redis / BullMQ| Redis
     Worker -->|DATABASE_URL| PG
     Worker -->|Redis / BullMQ| Redis
-    API -.->|same image| Worker
 
     PG --- VolPG[(postgres_data volume)]
     Redis --- VolRedis[(redis_data volume)]
@@ -671,7 +688,7 @@ flowchart TD
     Enqueue[Enqueue to BullMQ]
     Success[Return 202 Accepted]
     EnqueueFail[Mark Job FAILED in PostgreSQL]
-    InfraError[Return 503 / 500]
+    InfraError[Return 500 / rethrown error]
 
     Request --> PGWrite
     PGWrite --> Enqueue
@@ -698,48 +715,43 @@ The queue provides **at-least-once** delivery in some failure scenarios (for exa
 ## Security Considerations
 
 - Validate request data and reject unknown fields.
-- Enforce a maximum pagination `limit` of **100**.
+- Enforce a maximum pagination `pageSize` of **100**.
 - Do not commit `.env`; provide `.env.example`.
 - Do not expose raw stack traces or internal errors in API responses.
-- Avoid logging sensitive payload values (simulation may log payloads locally).
+- Avoid logging sensitive payload values; the worker logs **payload keys** only.
 - Restrict Swagger and queue control endpoints in production.
-- **Optional bonus:** JWT authentication and rate limiting on job submission.
+- **Not implemented:** JWT authentication and rate limiting.
 
 ---
 
 ## Testing Strategy
 
-### Unit tests (planned)
+### Unit tests (implemented)
 
-- Job submission validation
-- Repository interactions (mocked)
+- Job submission validation and schedule rules
+- Repository interactions (mocked Prisma)
 - Enqueue failure handling and reconciliation
-- Retry state transitions
-- Final failure after three attempts
-- Successful completion
+- Retry state transitions and simulation fields
 - Priority mapping to BullMQ
-- Delay and `runAt` calculation and validation
+- Delay and `runAt` calculation
 - Cancellation conflict detection
-- Metrics calculation (success rate edge cases)
+- Metrics and health calculations
+- Queue pause/resume
 
-### Integration tests (planned)
+### E2E API tests (implemented)
 
-- Submit job → persisted as queued
-- Worker processes job → processing → completed
-- Temporary failures retry → eventual success or failure
-- Attempt history persisted
-- Listing pagination, filters, sort order
-- Delayed job does not run early
-- Cancelled job is not processed
-- Dead-letter listing for failed jobs
+- HTTP endpoints via Nest test application
+- Jobs CRUD, cancellation, dead-letter listing
+- Queue controls, health, metrics, Swagger
+- Dependencies mocked where appropriate (no real PostgreSQL/Redis required)
 
-### Infrastructure verification (planned)
+### Manual Docker runtime verification
 
-- `docker compose up` starts all services
-- Migrations apply successfully
-- API health responds
-- Worker consumes submitted jobs
-- Clean startup after volume deletion
+- `docker compose up --build` starts postgres, redis, migrate, api, worker
+- Migrations apply successfully (migrate exits 0)
+- API health, metrics, Swagger respond
+- Worker processes submitted jobs end-to-end
+- Worker restart and second job completion
 
 ---
 
@@ -921,7 +933,7 @@ The queue provides **at-least-once** delivery in some failure scenarios (for exa
 | **Status** | Accepted |
 | **Context** | Operators need visibility into permanently failed jobs. |
 | **Alternatives** | BullMQ DLQ; PostgreSQL query; external DLQ service |
-| **Decision** | **`GET /dead-letter-jobs` queries permanently failed jobs in PostgreSQL. Initial implementation is a dead-letter view, not a separate queue. A dedicated BullMQ DLQ is a future enhancement.** |
+| **Decision** | **`GET /api/dead-letter-jobs` queries permanently failed jobs in PostgreSQL (`FAILED`, `retryCount > 0`). Implemented as a dead-letter view, not a separate queue. A dedicated BullMQ DLQ is a future enhancement.** |
 | **Reasons** | Failure data already durable; simpler than operating a second queue. |
 | **Benefits** | Pagination, filters, and attempt history in one store. |
 | **Trade-offs** | No BullMQ-native DLQ replay mechanics. |
@@ -966,7 +978,7 @@ The queue provides **at-least-once** delivery in some failure scenarios (for exa
 | **Status** | Accepted |
 | **Context** | Health endpoint must reflect worker availability separately from API. |
 | **Alternatives** | Process manager only; HTTP worker health port; Redis heartbeat |
-| **Decision** | **Redis key pattern `worker:heartbeat:<workerId>` (planned naming convention), refreshed every 5s with 15s TTL (env-configurable).** |
+| **Decision** | **Redis key `worker:heartbeat` (single key), refreshed every 5s with 15s TTL (env-configurable).** |
 | **Reasons** | Lightweight; works across multiple workers; auto-expires on crash. |
 | **Benefits** | Simple liveness signal for health checks. |
 | **Trade-offs** | Does not detect stuck job handlers. |
@@ -996,7 +1008,7 @@ The queue provides **at-least-once** delivery in some failure scenarios (for exa
 | **Status** | Accepted |
 | **Context** | Evaluators and developers need one-command local startup. |
 | **Alternatives** | Manual local installs; Docker Compose; full K8s locally |
-| **Decision** | **Docker Compose** for PostgreSQL, Redis, API, and worker. |
+| **Decision** | **Docker Compose** for PostgreSQL, Redis, migrate, API, and worker. |
 | **Reasons** | Reproducible, documented, appropriate for assignment scope. |
 | **Benefits** | Consistent environments; isolated dependencies. |
 | **Trade-offs** | Not production orchestration; Compose files require maintenance. |
@@ -1011,8 +1023,8 @@ The queue provides **at-least-once** delivery in some failure scenarios (for exa
 | **Status** | Accepted |
 | **Context** | Retry and failure paths must be testable without real downstream failures. |
 | **Alternatives** | Mock worker only; payload flags; environment-based failure injection |
-| **Decision** | **Optional, mutually exclusive payload fields `shouldFail` and `failUntilAttempt` for development and testing.** |
-| **Reasons** | `shouldFail: true` fails every attempt (permanent failure testing). `failUntilAttempt: N` fails attempts 1..N then succeeds on the next. `failUntilAttempt` must be an integer from **1** to **maxAttempts − 1** (**1** or **2** when maxAttempts is **3**). Validation rejects both fields in one payload and out-of-range `failUntilAttempt` values. |
+| **Decision** | **Optional payload fields `shouldFail` and `failUntilAttempt` evaluated by the worker during processing (not validated at the API layer).** |
+| **Reasons** | `shouldFail: true` fails every attempt. `failUntilAttempt: N` (integer) fails attempts 1..N then succeeds on the next. If both are present, `shouldFail` is checked first and causes every attempt to fail. |
 | **Benefits** | Repeatable failure scenarios; no external dependency. |
 | **Trade-offs** | Must not be enabled blindly in production; document as dev/test controls. |
 | **When an alternative would be preferable** | Dedicated fault-injection service in advanced chaos testing. |
@@ -1040,14 +1052,14 @@ sequenceDiagram
         API-->>Client: 202 Accepted (jobId, status)
         Worker->>BQ: Receive job
         Worker->>PG: Create JobAttempt #1, status=PROCESSING
-        Worker->>Worker: Log payload, simulate work
+        Worker->>Worker: Log payload keys, simulate work
         Worker->>PG: Complete attempt, status=COMPLETED
         Worker->>PG: Update Job status=COMPLETED
     else Enqueue failure
         API->>BQ: Add job
         BQ-->>API: Error
         API->>PG: Update Job status=FAILED (enqueue error)
-        API-->>Client: 503 Service Unavailable
+        API-->>Client: 500 Internal Server Error (raw enqueue error rethrown)
     end
 ```
 

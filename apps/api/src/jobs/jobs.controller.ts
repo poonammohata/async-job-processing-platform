@@ -67,8 +67,10 @@ export class JobsController {
   })
   @ApiResponse({ status: 202, type: CreateJobResponseDto })
   @ApiResponse({ status: 400, description: 'Validation or schedule error' })
-  @ApiResponse({ status: 503, description: 'Queue unavailable' })
-  @ApiResponse({ status: 500, description: 'Unexpected server error' })
+  @ApiResponse({
+    status: 500,
+    description: 'Enqueue or unexpected server error',
+  })
   async createJob(@Body() dto: CreateJobDto): Promise<CreateJobResponseDto> {
     try {
       return await this.jobsService.createJob({
